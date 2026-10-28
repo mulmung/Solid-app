@@ -591,7 +591,7 @@ $("authForm").onsubmit = e => { e.preventDefault(); busy($("authBtn"), async () 
   if (mode === "signup") {
     if (password.length < 6) return $("authErr").textContent = "비밀번호는 6자 이상으로 정해주세요.";
     const { data, error } = await sb.auth.signUp({ email, password });
-    if (error) return $("authErr").textContent = /Database error|등록되지 않은/.test(error.message) ? "등록되지 않은 이메일이에요. 관리자에게 트레이너 등록을 요청하세요." : /already/i.test(error.message) ? "이미 가입한 이메일이에요. 로그인해주세요." : error.message;
+    if (error) return $("authErr").textContent = /Database error|등록되지 않은/.test(error.message) ? "등록되지 않은 이메일이에요. 관리자에게 트레이너 등록을 요청하세요." : /already/i.test(error.message) ? "이미 가입한 이메일이에요. 로그인해주세요." : /not allowed/i.test(error.message) ? "지금은 가입이 막혀 있어요. 관리자에게 수파베이스 가입 허용 설정을 확인해달라고 해주세요." : error.message;
     if (!data.session) { $("authOk").textContent = "가입했어요. 이메일로 온 확인 링크를 누른 뒤 로그인해주세요."; setMode("login"); return; }
   } else {
     const { error } = await sb.auth.signInWithPassword({ email, password });
