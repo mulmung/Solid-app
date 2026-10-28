@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex, nofollow">
+<title>솔리드 피지컬 트레이닝</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 로그인 -->
+<div class="auth" id="authView" hidden>
+  <form class="authcard" id="authForm" novalidate>
+    <div><div class="logo">SOLID PHYSICAL</div><h1 id="authTitle">로그인</h1></div>
+    <div class="seg" role="group" aria-label="로그인 또는 가입">
+      <button type="button" id="modeLogin" aria-pressed="true">로그인</button>
+      <button type="button" id="modeSignup" aria-pressed="false">처음 가입</button>
+    </div>
+    <div class="field"><label for="authEmail">이메일</label><input id="authEmail" type="email" autocomplete="email" inputmode="email"></div>
+    <div class="field"><label for="authPw">비밀번호</label><input id="authPw" type="password" autocomplete="current-password" minlength="6"><span class="hint" id="pwHint" hidden>6자 이상으로 정해주세요.</span></div>
+    <p class="hint" id="signupNote" hidden>관리자가 트레이너로 등록한 이메일만 가입할 수 있어요.</p>
+    <p class="err" id="authErr" role="alert"></p>
+    <p class="ok" id="authOk"></p>
+    <button type="submit" class="primary" id="authBtn">로그인</button>
+  </form>
+</div>
+
+<!-- 앱 -->
+<div id="appView" hidden>
+<header>
+  <div class="wrap">
+    <div class="topline"><span class="me" id="meLabel"></span><button class="linkbtn" id="logoutBtn">로그아웃</button></div>
+    <div class="brand"><b>SOLID PHYSICAL</b>
+      <div style="display:flex;gap:6px;align-items:center"><div class="tabs" role="group" aria-label="메뉴"><button id="tabS" aria-pressed="true">스케줄</button><button id="tabR" aria-pressed="false">출석부</button></div><button class="mgr" id="mgrBtn" hidden>트레이너</button></div>
+    </div>
+    <div id="hSched" style="display:grid;gap:10px">
+      <div class="datebar">
+        <button class="navb" id="prev" aria-label="이전 날">‹</button>
+        <div class="datelabel"><strong id="dateMain"></strong><small id="dateSub"></small><input type="date" id="datePick" aria-label="날짜 선택"></div>
+        <button class="navb" id="next" aria-label="다음 날">›</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="seg" role="group" aria-label="보기 방식"><button id="vTrainer" aria-pressed="true">트레이너별</button><button id="vTime" aria-pressed="false">시간순</button></div>
+        <button class="today" id="todayBtn">오늘</button>
+      </div>
+    </div>
+    <div id="hList" hidden><input class="search" id="aSearch" placeholder="이름, 초성(ㄱㅁㅈ), 소속으로 검색" aria-label="선수 검색"></div>
+    <div id="hLedger" hidden class="back"><button id="backBtn">‹ 목록</button><div class="who"><b id="lgName"></b><span id="lgSub"></span></div></div>
+  </div>
+</header>
+
+<main><div class="wrap">
+  <div class="summary" id="summary"></div>
+  <div id="list" style="display:grid;gap:16px"></div>
+</div></main>
+
+<button class="fab" id="fab">+ 수업 추가</button>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- 수업 등록/수정 -->
+<div class="sheet" id="lessonSheet" hidden role="dialog" aria-modal="true" aria-labelledby="lTitle">
+  <form id="lForm" novalidate>
+    <h3 id="lTitle">수업 추가</h3>
+    <div class="field"><span class="lbl">수업 종류</span>
+      <div class="opts" id="types">
+        <button type="button" data-t="personal">개인<small>1:1 · 80분</small></button>
+        <button type="button" data-t="group">그룹<small>1:다 · 80분</small></button>
+        <button type="button" data-t="team">단체<small>학교·팀 · 90분</small></button>
+      </div></div>
+    <div class="two">
+      <div class="field"><label for="fTrainer">트레이너</label><select id="fTrainer"></select></div>
+      <div class="field"><label for="fDate">날짜</label><input type="date" id="fDate"></div>
+    </div>
+    <div class="two">
+      <div class="field"><label for="fStart">시작 시간</label><input type="time" id="fStart" step="300"></div>
+      <div class="field"><span class="lbl">종료 (자동)</span><div class="endtime" id="fEnd">--:--</div></div>
+    </div>
+    <div class="field" id="boxPick">
+      <label for="fFind" id="pickLbl">선수</label>
+      <div class="tags" id="picked"></div>
+      <input id="fFind" placeholder="이름 또는 초성으로 검색" autocomplete="off">
+      <div class="results" id="results"></div>
+    </div>
+    <div id="boxTeam" hidden style="display:grid;gap:16px">
+      <div class="field"><label for="fTeam">학교 또는 팀</label><input id="fTeam" placeholder="예: 한빛중 축구부"></div>
+      <div class="field"><label for="fGrade">학년</label><input id="fGrade" placeholder="예: 2학년"></div>
+    </div>
+    <p class="err" id="lErr" role="alert"></p>
+    <div class="actions">
+      <button type="button" class="del" id="lDel" hidden>삭제</button>
+      <button type="button" data-close>취소</button>
+      <button type="submit" class="primary">저장</button>
+    </div>
+  </form>
+</div>
+
+<!-- 출석 상태 -->
+<div class="sheet" id="attSheet" hidden role="dialog" aria-modal="true" aria-labelledby="atTitle">
+  <div class="in">
+    <div><h3 id="atTitle"></h3><div class="meta" id="atSub"></div></div>
+    <div class="opts four" id="atOpts">
+      <button type="button" data-v="present">출석<small>차감</small></button>
+      <button type="button" data-v="same">당일취소<small>기본 차감</small></button>
+      <button type="button" data-v="prior">사전취소<small>미차감</small></button>
+      <button type="button" data-v="">미체크<small>기록 지우기</small></button>
+    </div>
+    <div class="ded" id="atDed" hidden>
+      <label><input type="checkbox" id="atDeduct"> 회차 차감</label>
+      <span class="hint">개인 사정 등으로 봐주는 경우 체크를 끄세요</span>
+    </div>
+    <div class="field"><label for="atMemo">메모</label><input id="atMemo" placeholder="예: 학교 행사로 당일 취소"></div>
+    <p class="err" id="atErr" role="alert"></p>
+    <div class="actions"><button type="button" data-close>닫기</button><button type="button" class="primary" id="atSave">저장</button></div>
+  </div>
+</div>
+
+<!-- 결제 기록 -->
+<div class="sheet" id="paySheet" hidden role="dialog" aria-modal="true" aria-labelledby="pTitle">
+  <form id="pForm" novalidate>
+    <h3 id="pTitle">결제 기록</h3>
+    <div class="field"><span class="lbl">항목</span>
+      <div class="opts four" id="pKinds">
+        <button type="button" data-k="trial">체험수업<small>1회</small></button>
+        <button type="button" data-k="pass">회차권<small>N회 선결제</small></button>
+        <button type="button" data-k="month">월 정산<small>한 달 진행분</small></button>
+        <button type="button" data-k="visit">1회 결제<small>올 때마다</small></button>
+      </div></div>
+    <div class="field" id="pCountBox"><label for="pCount">횟수</label>
+      <div class="presets"><button type="button" data-c="10">10회</button><button type="button" data-c="4">4회</button></div>
+      <input id="pCount" type="number" min="1" inputmode="numeric" placeholder="직접 입력"></div>
+    <div class="field" id="pMonthBox" hidden><label for="pMonth">정산 월</label><input id="pMonth" type="month"><span class="hint" id="pMonthHint"></span></div>
+    <div class="field" id="pLessonBox" hidden><label for="pLesson">어느 수업 결제인가요</label><select id="pLesson"></select></div>
+    <div class="two">
+      <div class="field"><label for="pDate">결제일</label><input id="pDate" type="date"></div>
+      <div class="field"><label for="pPrice">금액 (부가세 별도)</label><input id="pPrice" type="number" min="0" inputmode="numeric"></div>
+    </div>
+    <div class="field"><span class="lbl">결제 수단</span>
+      <div class="opts" id="pMethods">
+        <button type="button" data-m="카드">카드</button>
+        <button type="button" data-m="현금">현금</button>
+        <button type="button" data-m="계좌이체">계좌이체</button>
+      </div></div>
+    <div class="vatbox" id="pTotal"></div>
+    <div class="field"><label for="pMemo">메모</label><input id="pMemo" placeholder="예: 현금영수증 발행"></div>
+    <p class="err" id="pErr" role="alert"></p>
+    <div class="actions"><button type="button" class="del" id="pDel" hidden>삭제</button><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
+<!-- 트레이너 관리 (관리자) -->
+<div class="sheet" id="trSheet" hidden role="dialog" aria-modal="true" aria-labelledby="trTitle">
+  <div class="in">
+    <div><h3 id="trTitle">트레이너 관리</h3><div class="hint">이름만 적으면 화면에는 "○○○ 트레이너"로 표시돼요. 여기 등록한 이메일로만 앱에 가입할 수 있어요.</div></div>
+    <div id="trList"></div>
+    <div class="field"><span class="lbl">새 트레이너</span>
+      <div class="two"><input id="trNew" placeholder="이름 (예: 홍길동)" aria-label="새 트레이너 이름"><input id="trEmail" type="email" inputmode="email" placeholder="가입할 이메일" aria-label="새 트레이너 이메일"></div>
+      <button type="button" id="trAdd" style="height:44px;border:0;background:var(--accent);color:var(--on-accent);border-radius:10px;font-weight:700">추가</button></div>
+    <p class="err" id="trErr" role="alert"></p>
+    <div class="actions"><button type="button" class="primary" data-close>완료</button></div>
+  </div>
+</div>
+
+<!-- 선수 등록/수정 -->
+<div class="sheet" id="athForm" hidden role="dialog" aria-modal="true" aria-labelledby="afTitle">
+  <form id="aForm" novalidate>
+    <h3 id="afTitle">선수 등록</h3>
+    <div class="two">
+      <div class="field"><label for="aName">이름</label><input id="aName" placeholder="예: 김민준"></div>
+      <div class="field"><label for="aTeam">소속</label><input id="aTeam" placeholder="예: 한빛중 축구부"></div>
+    </div>
+    <div class="field"><label for="aBirth">나이 (한국 나이)</label><input id="aBirth" type="number" min="1" max="100" inputmode="numeric" placeholder="예: 15"><span class="hint" id="aAgeHint"></span></div>
+    <div class="field"><span class="lbl">기본 결제 방식</span>
+      <div class="opts" id="plans">
+        <button type="button" data-p="pass">회차권<small>선불 · 차감</small></button>
+        <button type="button" data-p="monthly">월 정산<small>후불 · 월말</small></button>
+        <button type="button" data-p="visit">매회 결제<small>올 때마다</small></button>
+      </div></div>
+    <div class="field"><label for="aPrice">회당 단가 (원)</label><input id="aPrice" type="number" min="0" inputmode="numeric" placeholder="예: 55000"><span class="hint">결제 기록을 쓸 때 금액 기본값으로 쓰여요. 단가가 바뀌어도 이전 결제 기록은 그대로예요.</span></div>
+    <p class="err" id="aErr" role="alert"></p>
+    <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
