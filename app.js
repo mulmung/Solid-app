@@ -556,7 +556,7 @@ function drawTrainers() {
   trainers.forEach(t => {
     const r = document.createElement("div"); r.className = "trow" + (t.active ? "" : " off");
     const self = me && t.id === me.id;
-    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름"><span class="hint">${esc(t.email)} · ${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button>`}`;
+    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
     const chips = r.querySelector(".brchips");
     if (chips) branches.filter(b => b.active).forEach(br => {
       const c = document.createElement("button"); c.type = "button"; c.className = "brchip"; c.textContent = br.name;
@@ -577,6 +577,24 @@ function drawTrainers() {
       if (error) { $("trErr").textContent = friendly(error); inp.value = t.name; return; }
       t.name = v; toast("이름을 바꿨어요"); render();
     };
+    const em = r.querySelector(".temail");
+    if (em) {
+      em.value = t.email;
+      em.onchange = async () => {
+        const v = em.value.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { $("trErr").textContent = "이메일 형식을 확인해주세요."; em.value = t.email; return; }
+        const { error } = await sb.from("trainers").update({ email: v }).eq("id", t.id);
+        if (error) { $("trErr").textContent = /duplicate|unique/i.test(error.message) ? "이미 등록된 이메일이에요." : friendly(error); em.value = t.email; return; }
+        t.email = v; $("trErr").textContent = ""; toast("이메일을 바꿨어요");
+      };
+    }
+    const del = r.querySelector(".tdel");
+    if (del) del.onclick = () => confirmBtn(del, "정말 삭제", () => busy(del, async () => {
+      const { error } = await sb.rpc("delete_trainer", { p_id: t.id });
+      if (error) return $("trErr").textContent = error.message.replace(/^.*?: /, "");
+      trainers = trainers.filter(x => x.id !== t.id); delete trainerBr[t.id];
+      $("trErr").textContent = ""; drawTrainers(); toast(`${t.name} 트레이너를 삭제했어요`); render();
+    }));
     const b = r.querySelector(".tact");
     if (b) b.onclick = () => busy(b, async () => {
       const { error } = await sb.from("trainers").update({ active: !t.active }).eq("id", t.id);

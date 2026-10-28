@@ -181,3 +181,5 @@ body{margin:0}
 .brchip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600;color:var(--muted)}
 .brchip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .trow{align-items:start}
+.trow .temail{height:36px;font-size:13px}
+.trow .tact,.trow .tdel{height:34px}
