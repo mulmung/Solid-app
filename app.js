@@ -737,6 +737,15 @@ $("authForm").onsubmit = e => { e.preventDefault(); busy($("authBtn"), async () 
   }
 }); };
 $("logoutBtn").onclick = async () => { await sb.auth.signOut(); };
+$("pwBtn").onclick = () => { $("pwNew").value = ""; $("pwNew2").value = ""; $("pwErr").textContent = ""; show($("pwSheet")); };
+$("pwForm").onsubmit = e => { e.preventDefault(); busy($("pwForm").querySelector(".primary"), async () => {
+  const a = $("pwNew").value, b = $("pwNew2").value;
+  if (a.length < 6) return $("pwErr").textContent = "비밀번호는 6자 이상으로 정해주세요.";
+  if (a !== b) return $("pwErr").textContent = "두 비밀번호가 서로 달라요.";
+  const { error } = await sb.auth.updateUser({ password: a });
+  if (error) return $("pwErr").textContent = /different from the old|same/i.test(error.message) ? "지금 비밀번호와 다른 비밀번호로 정해주세요." : /weak|short/i.test(error.message) ? "더 복잡한 비밀번호로 정해주세요." : error.message;
+  close(); toast("비밀번호를 바꿨어요. 다음 로그인부터 새 비밀번호를 쓰세요.");
+}); };
 
 async function enter(session) {
   if (!session) { me = null; $("appView").hidden = true; $("authView").hidden = false; return; }

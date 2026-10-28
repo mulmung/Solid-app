@@ -33,7 +33,7 @@
 <div id="appView" hidden>
 <header>
   <div class="wrap">
-    <div class="topline"><div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="branchSel" class="branchsel" aria-label="지점 선택" hidden></select><span class="me" id="meLabel"></span></div><button class="linkbtn" id="logoutBtn">로그아웃</button></div>
+    <div class="topline"><div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="branchSel" class="branchsel" aria-label="지점 선택" hidden></select><span class="me" id="meLabel"></span></div><div style="display:flex;gap:10px"><button class="linkbtn" id="pwBtn">비밀번호 변경</button><button class="linkbtn" id="logoutBtn">로그아웃</button></div></div>
     <div class="brand"><b>SOLID PHYSICAL</b>
       <div style="display:flex;gap:6px;align-items:center"><div class="tabs" role="group" aria-label="메뉴"><button id="tabS" aria-pressed="true">스케줄</button><button id="tabR" aria-pressed="false">출석부</button></div><button class="mgr" id="mgrBtn" hidden>트레이너</button></div>
     </div>
@@ -188,6 +188,17 @@
     <div class="field"><label for="aPrice">회당 단가 (원)</label><input id="aPrice" type="number" min="0" inputmode="numeric" placeholder="예: 55000"><span class="hint">결제 기록을 쓸 때 금액 기본값으로 쓰여요. 단가가 바뀌어도 이전 결제 기록은 그대로예요.</span></div>
     <p class="err" id="aErr" role="alert"></p>
     <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
+<!-- 비밀번호 변경 -->
+<div class="sheet" id="pwSheet" hidden role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+  <form id="pwForm" novalidate>
+    <h3 id="pwTitle">비밀번호 변경</h3>
+    <div class="field"><label for="pwNew">새 비밀번호</label><input id="pwNew" type="password" autocomplete="new-password" minlength="6"><span class="hint">6자 이상, 다른 사이트와 다른 비밀번호를 추천해요.</span></div>
+    <div class="field"><label for="pwNew2">새 비밀번호 확인</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+    <p class="err" id="pwErr" role="alert"></p>
+    <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary">변경</button></div>
   </form>
 </div>
 
