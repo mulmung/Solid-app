@@ -756,7 +756,7 @@ $("authForm").onsubmit = e => { e.preventDefault(); busy($("authBtn"), async () 
 }); };
 $("logoutBtn").onclick = async () => { await sb.auth.signOut(); };
 /* ---------- 데이터 내보내기 (관리자) ---------- */
-let expScope = "cur";
+let expScope = "cur"; // "all" 또는 지점 번호
 function expRange(r) {
   const t = new Date(); let a, b;
   if (r === "this") { a = new Date(t.getFullYear(), t.getMonth(), 1); b = new Date(t.getFullYear(), t.getMonth() + 1, 0); }
@@ -765,10 +765,11 @@ function expRange(r) {
   $("expFrom").value = iso(a); $("expTo").value = iso(b);
 }
 document.querySelectorAll("#expPresets button").forEach(b => b.onclick = () => expRange(b.dataset.r));
-document.querySelectorAll("#expScope button").forEach(b => b.onclick = () => { expScope = b.dataset.s; press("#expScope button", "s", expScope); });
+$("expBranch").onchange = e => { expScope = e.target.value === "all" ? "all" : Number(e.target.value); };
 $("expBtn").onclick = () => {
-  expRange("this"); expScope = "cur"; press("#expScope button", "s", "cur");
-  $("expScope").querySelector('[data-s="cur"]').textContent = `지금 지점 (${BN(curBranch)})`;
+  expRange("this"); expScope = curBranch;
+  $("expBranch").innerHTML = `<option value="all">전 지점</option>` + myBranches().map(b => `<option value="${b.id}">${esc(b.name)}${b.id === curBranch ? " (지금 지점)" : ""}</option>`).join("");
+  $("expBranch").value = String(curBranch);
   $("expErr").textContent = ""; show($("expSheet"));
 };
 let xlsxReady = null;
@@ -787,7 +788,8 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
   $("expErr").textContent = ""; $("expGo").textContent = "만드는 중…";
   try {
     await loadXlsx();
-    const scope = q => expScope === "cur" ? q.eq("branch_id", curBranch) : q;
+    const one = expScope !== "all";
+    const scope = q => one ? q.eq("branch_id", expScope) : q;
     const [ls, ps] = await Promise.all([
       fetchAll("lessons", "id,type,trainer_id,branch_id,date,start_time,team,grade,lesson_athletes(athlete_id,status,deduct,memo)",
         q => scope(q.gte("date", from).lte("date", to)).order("date").order("start_time")),
@@ -811,11 +813,11 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
       const total = p.price + p.vat; byMethod[p.method] = (byMethod[p.method] || 0) + total;
       return { 결제일: p.date, 지점: BN(p.branch), 선수: (A(p.aid) || {}).name || "(삭제된 선수)", 항목: KIND[p.kind], 횟수: p.kind === "pass" || p.kind === "month" ? p.count : "", "정산 월": p.month || "", "금액(부가세 별도)": p.price, 부가세: p.vat, "받은 금액": total, 결제수단: p.method, 메모: p.memo };
     });
-    const pool = expScope === "cur" ? athletesHere() : athletes;
+    const pool = one ? athletes.filter(a => inBranch(athleteBr, a.id, expScope)) : athletes;
     const athRows = pool.slice().sort((x, y) => x.name.localeCompare(y.name, "ko")).map(a => ({
       이름: a.name, 소속: a.team, 나이: a.by ? ageOf(a.by) : "", 출생연도: a.by || "", 지점: [...(athleteBr[a.id] || [])].map(BN).join(", "), 결제방식: PLAN[a.plan], 회당단가: a.price, 현재상태: status(a).chip[1] }));
     const sum = [
-      ["솔리드 피지컬 트레이닝 데이터"], ["기간", `${from} ~ ${to}`], ["지점", expScope === "cur" ? BN(curBranch) : "전 지점"], ["만든 날", todayIso()], [],
+      ["솔리드 피지컬 트레이닝 데이터"], ["기간", `${from} ~ ${to}`], ["지점", one ? BN(expScope) : "전 지점"], ["만든 날", todayIso()], [],
       ["결제 합계 (받은 금액)"], ...["카드", "계좌이체", "현금"].map(m => [m, byMethod[m] || 0]), ["합계", Object.values(byMethod).reduce((a, b) => a + b, 0)], [],
       ["출석 현황 (개인·그룹)"], ["출석", cP], ["당일취소", cS], ["  그중 차감", cSd], ["사전취소", cPr], ["미체크", cU], ["수업 수", ls.length],
     ];
@@ -825,7 +827,7 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     add("수업·출석", XLSX.utils.json_to_sheet(lessonRows.length ? lessonRows : [{ 안내: "이 기간 수업이 없어요" }]), [11, 5, 10, 7, 7, 6, 14, 18, 9, 6, 24]);
     add("결제", XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ 안내: "이 기간 결제가 없어요" }]), [11, 10, 10, 9, 6, 9, 14, 9, 12, 9, 24]);
     add("선수 목록", XLSX.utils.json_to_sheet(athRows.length ? athRows : [{ 안내: "선수가 없어요" }]), [10, 16, 6, 8, 16, 10, 10, 14]);
-    const tag = expScope === "cur" ? BN(curBranch) : "전지점";
+    const tag = one ? BN(expScope) : "전지점";
     XLSX.writeFile(wb, `솔리드_${tag}_${from}_${to}.xlsx`);
     close(); toast("엑셀 파일을 받았어요. 다운로드 폴더를 확인해주세요.");
   } catch (err) { $("expErr").textContent = friendly(err); }

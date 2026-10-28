@@ -200,7 +200,7 @@
       <div class="two"><input type="date" id="expFrom" aria-label="시작일"><input type="date" id="expTo" aria-label="종료일"></div>
     </div>
     <div class="field"><span class="lbl">지점</span>
-      <div class="opts" id="expScope" style="grid-template-columns:1fr 1fr"><button type="button" data-s="cur">지금 지점</button><button type="button" data-s="all">전 지점</button></div>
+      <select id="expBranch" aria-label="내보낼 지점" style="width:100%;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg)"></select>
     </div>
     <p class="err" id="expErr" role="alert"></p>
     <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary" id="expGo">엑셀 받기</button></div>
