@@ -556,7 +556,7 @@ function drawTrainers() {
   trainers.forEach(t => {
     const r = document.createElement("div"); r.className = "trow" + (t.active ? "" : " off");
     const self = me && t.id === me.id;
-    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
+    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="trole">${t.role === "admin" ? "관리자 해제" : "관리자 지정"}</button><button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
     const chips = r.querySelector(".brchips");
     if (chips) branches.filter(b => b.active).forEach(br => {
       const c = document.createElement("button"); c.type = "button"; c.className = "brchip"; c.textContent = br.name;
@@ -588,6 +588,14 @@ function drawTrainers() {
         t.email = v; $("trErr").textContent = ""; toast("이메일을 바꿨어요");
       };
     }
+    const rb = r.querySelector(".trole");
+    if (rb) rb.onclick = () => confirmBtn(rb, t.role === "admin" ? "정말 해제" : "정말 지정", () => busy(rb, async () => {
+      const role = t.role === "admin" ? "trainer" : "admin";
+      const { error } = await sb.from("trainers").update({ role }).eq("id", t.id);
+      if (error) return $("trErr").textContent = friendly(error);
+      t.role = role; $("trErr").textContent = ""; drawTrainers();
+      toast(role === "admin" ? `${t.name} 님이 관리자가 됐어요 (전 지점 관리)` : `${t.name} 님의 관리자 권한을 해제했어요`);
+    }));
     const del = r.querySelector(".tdel");
     if (del) del.onclick = () => confirmBtn(del, "정말 삭제", () => busy(del, async () => {
       const { error } = await sb.rpc("delete_trainer", { p_id: t.id });
