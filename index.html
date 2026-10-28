@@ -33,7 +33,7 @@
 <div id="appView" hidden>
 <header>
   <div class="wrap">
-    <div class="topline"><div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="branchSel" class="branchsel" aria-label="지점 선택" hidden></select><span class="me" id="meLabel"></span></div><div style="display:flex;gap:10px"><button class="linkbtn" id="pwBtn">비밀번호 변경</button><button class="linkbtn" id="logoutBtn">로그아웃</button></div></div>
+    <div class="topline"><div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="branchSel" class="branchsel" aria-label="지점 선택" hidden></select><span class="me" id="meLabel"></span></div><div style="display:flex;gap:10px"><button class="linkbtn" id="expBtn" hidden>내보내기</button><button class="linkbtn" id="pwBtn">비밀번호 변경</button><button class="linkbtn" id="logoutBtn">로그아웃</button></div></div>
     <div class="brand"><b>SOLID PHYSICAL</b>
       <div style="display:flex;gap:6px;align-items:center"><div class="tabs" role="group" aria-label="메뉴"><button id="tabS" aria-pressed="true">스케줄</button><button id="tabR" aria-pressed="false">출석부</button></div><button class="mgr" id="mgrBtn" hidden>트레이너</button></div>
     </div>
@@ -188,6 +188,22 @@
     <div class="field"><label for="aPrice">회당 단가 (원)</label><input id="aPrice" type="number" min="0" inputmode="numeric" placeholder="예: 55000"><span class="hint">결제 기록을 쓸 때 금액 기본값으로 쓰여요. 단가가 바뀌어도 이전 결제 기록은 그대로예요.</span></div>
     <p class="err" id="aErr" role="alert"></p>
     <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
+<!-- 데이터 내보내기 (관리자) -->
+<div class="sheet" id="expSheet" hidden role="dialog" aria-modal="true" aria-labelledby="expTitle">
+  <form id="expForm" novalidate>
+    <div><h3 id="expTitle">데이터 내보내기</h3><div class="hint">고른 기간의 수업·출석, 결제를 엑셀 파일로 받아요. 선수 목록은 기간과 상관없이 함께 담겨요.</div></div>
+    <div class="field"><span class="lbl">기간</span>
+      <div class="presets" id="expPresets"><button type="button" data-r="this">이번 달</button><button type="button" data-r="last">지난 달</button><button type="button" data-r="year">올해</button></div>
+      <div class="two"><input type="date" id="expFrom" aria-label="시작일"><input type="date" id="expTo" aria-label="종료일"></div>
+    </div>
+    <div class="field"><span class="lbl">지점</span>
+      <div class="opts" id="expScope" style="grid-template-columns:1fr 1fr"><button type="button" data-s="cur">지금 지점</button><button type="button" data-s="all">전 지점</button></div>
+    </div>
+    <p class="err" id="expErr" role="alert"></p>
+    <div class="actions"><button type="button" data-close>취소</button><button type="submit" class="primary" id="expGo">엑셀 받기</button></div>
   </form>
 </div>
 
