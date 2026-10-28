@@ -250,6 +250,7 @@ function renderList() {
   box.appendChild(wrap);
 }
 async function openLedger(id) {
+  if (layer() !== "ledger") history.pushState({ layer: "ledger" }, "");
   ledgerId = id; ledgerLessons = null; render(); window.scrollTo(0, 0);
   try { await loadLedger(id); } catch (e) { toast(friendly(e), true); }
   if (ledgerId === id) render();
@@ -319,9 +320,31 @@ function render() {
 
 /* ---------- 시트 공통 ---------- */
 let openSheetEl = null;
-function show(el) { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = el; $("scrim").hidden = false; el.hidden = false; }
-function close() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; }
-$("scrim").onclick = close; document.querySelectorAll("[data-close]").forEach(b => b.onclick = close);
+/* 휴대폰 뒤로가기: 창을 열거나 선수 장부로 들어갈 때 기록을 하나 쌓고, 뒤로가기를 누르면 그 기록을 되돌림 */
+let ignorePop = false;
+const layer = () => history.state && history.state.layer;
+function hideSheet() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; }
+function show(el) {
+  const wasOpen = !!openSheetEl;
+  if (openSheetEl) openSheetEl.hidden = true; openSheetEl = el; $("scrim").hidden = false; el.hidden = false;
+  if (!wasOpen) history.pushState({ layer: "sheet" }, "");
+}
+// next: 창을 닫으면서 다른 화면(예: 새 선수 장부)으로 바로 넘어갈 때
+function close(next) {
+  if (!openSheetEl) return;
+  hideSheet();
+  if (layer() === "sheet") {
+    if (next) history.replaceState({ layer: next }, "");
+    else { ignorePop = true; history.back(); }
+  }
+}
+function leaveLedger() { if (layer() === "ledger") history.back(); else { ledgerId = null; render(); } }
+window.addEventListener("popstate", () => {
+  if (ignorePop) { ignorePop = false; return; }
+  if (openSheetEl) { hideSheet(); return; }
+  if (ledgerId && layer() !== "ledger") { ledgerId = null; render(); }
+});
+$("scrim").onclick = () => close(); document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => close());
 function confirmBtn(btn, label, fn) {
   if (btn.dataset.c !== "1") { btn.dataset.c = "1"; const o = btn.textContent; btn.textContent = label; setTimeout(() => { btn.dataset.c = ""; btn.textContent = o; }, 3000); return; }
   btn.dataset.c = ""; fn();
@@ -557,6 +580,7 @@ $("aForm").onsubmit = e => { e.preventDefault(); busy($("aForm").querySelector("
     const { data, error } = await sb.from("athletes").insert(row).select("id").single();
     if (error) return $("aErr").textContent = friendly(error);
     ledgerId = data.id; ledgerLessons = [];
+    close("ledger"); toast("저장했어요"); refresh(); return;
   }
   close(); toast("저장했어요"); refresh();
 }); };
@@ -567,8 +591,9 @@ $("prev").onclick = () => shift(-1); $("next").onclick = () => shift(1);
 $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
 $("vTrainer").onclick = () => { view = "trainer"; render(); }; $("vTime").onclick = () => { view = "time"; render(); };
-$("tabS").onclick = () => { tab = "sched"; render(); }; $("tabR").onclick = () => { tab = "roll"; ledgerId = null; render(); };
-$("backBtn").onclick = () => { ledgerId = null; render(); };
+$("tabS").onclick = () => { if (ledgerId) leaveLedger(); tab = "sched"; render(); };
+$("tabR").onclick = () => { if (ledgerId) leaveLedger(); tab = "roll"; render(); };
+$("backBtn").onclick = leaveLedger;
 $("aSearch").oninput = renderList;
 $("fab").onclick = () => tab === "sched" ? openLesson() : openAthForm();
 // 다른 트레이너가 바꾼 내용을 반영: 앱으로 돌아올 때 새로고침
