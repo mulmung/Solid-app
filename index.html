@@ -33,7 +33,7 @@
 <div id="appView" hidden>
 <header>
   <div class="wrap">
-    <div class="topline"><span class="me" id="meLabel"></span><button class="linkbtn" id="logoutBtn">로그아웃</button></div>
+    <div class="topline"><div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="branchSel" class="branchsel" aria-label="지점 선택" hidden></select><span class="me" id="meLabel"></span></div><button class="linkbtn" id="logoutBtn">로그아웃</button></div>
     <div class="brand"><b>SOLID PHYSICAL</b>
       <div style="display:flex;gap:6px;align-items:center"><div class="tabs" role="group" aria-label="메뉴"><button id="tabS" aria-pressed="true">스케줄</button><button id="tabR" aria-pressed="false">출석부</button></div><button class="mgr" id="mgrBtn" hidden>트레이너</button></div>
     </div>
@@ -156,7 +156,10 @@
 <!-- 트레이너 관리 (관리자) -->
 <div class="sheet" id="trSheet" hidden role="dialog" aria-modal="true" aria-labelledby="trTitle">
   <div class="in">
-    <div><h3 id="trTitle">트레이너 관리</h3><div class="hint">이름만 적으면 화면에는 "○○○ 트레이너"로 표시돼요. 여기 등록한 이메일로만 앱에 가입할 수 있어요.</div></div>
+    <div><h3>지점</h3><div class="hint">이름을 눌러 바로 고칠 수 있어요.</div></div>
+    <div id="brList"></div>
+    <div style="display:flex;gap:6px"><input id="brNew" placeholder="새 지점 이름 (예: 강남점)" aria-label="새 지점 이름" style="flex:1;min-width:0;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg)"><button type="button" id="brAdd" style="border:0;background:var(--accent);color:var(--on-accent);border-radius:10px;padding:0 16px;font-weight:700">추가</button></div>
+    <div style="border-top:1px solid var(--line);padding-top:12px"><h3 id="trTitle">트레이너 관리</h3><div class="hint">이름만 적으면 화면에는 "○○○ 트레이너"로 표시돼요. 여기 등록한 이메일로만 앱에 가입할 수 있어요. 지점 버튼을 눌러 근무 지점을 배정하세요 (여러 개 가능).</div></div>
     <div id="trList"></div>
     <div class="field"><span class="lbl">새 트레이너</span>
       <div class="two"><input id="trNew" placeholder="이름 (예: 홍길동)" aria-label="새 트레이너 이름"><input id="trEmail" type="email" inputmode="email" placeholder="가입할 이메일" aria-label="새 트레이너 이메일"></div>
@@ -174,6 +177,7 @@
       <div class="field"><label for="aName">이름</label><input id="aName" placeholder="예: 김민준"></div>
       <div class="field"><label for="aTeam">소속</label><input id="aTeam" placeholder="예: 한빛중 축구부"></div>
     </div>
+    <div class="field" id="aBrBox"><span class="lbl">지점 (다른 지점에서도 수업하면 함께 선택)</span><div class="brchips" id="aBranches"></div></div>
     <div class="field"><label for="aBirth">나이 (한국 나이)</label><input id="aBirth" type="number" min="1" max="100" inputmode="numeric" placeholder="예: 15"><span class="hint" id="aAgeHint"></span></div>
     <div class="field"><span class="lbl">기본 결제 방식</span>
       <div class="opts" id="plans">

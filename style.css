@@ -174,3 +174,10 @@ body{margin:0}
 .authcard .primary{height:48px;border-radius:12px;border:0;background:var(--accent);color:var(--on-accent);font-weight:700}
 .authcard .primary:disabled{opacity:.6}
 .ok{color:var(--ok);font-size:13px;margin:0}
+
+/* 지점 */
+.branchsel{height:30px;border:1px solid var(--accent);border-radius:999px;padding:0 10px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13px;max-width:55vw}
+.brchips{display:flex;flex-wrap:wrap;gap:6px}
+.brchip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600;color:var(--muted)}
+.brchip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.trow{align-items:start}
