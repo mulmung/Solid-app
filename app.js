@@ -69,7 +69,7 @@ const canEdit = l => isAdmin() || (me && l.trainer === me.id);
 let toastTimer;
 function toast(msg, isErr) {
   const t = $("toast"); t.textContent = msg; t.className = "toast" + (isErr ? " err" : ""); t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, isErr ? 4500 : 2200);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, isErr || msg.length > 40 ? 7000 : 2200);
 }
 function friendly(err) {
   const m = (err && err.message) || String(err);
@@ -556,7 +556,7 @@ function drawTrainers() {
   trainers.forEach(t => {
     const r = document.createElement("div"); r.className = "trow" + (t.active ? "" : " off");
     const self = me && t.id === me.id;
-    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="trole">${t.role === "admin" ? "관리자 해제" : "관리자 지정"}</button><button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
+    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="trole">${t.role === "admin" ? "관리자 해제" : "관리자 지정"}</button>${t.linked ? `<button type="button" class="tpw">비밀번호 초기화</button>` : ""}<button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
     const chips = r.querySelector(".brchips");
     if (chips) branches.filter(b => b.active).forEach(br => {
       const c = document.createElement("button"); c.type = "button"; c.className = "brchip"; c.textContent = br.name;
@@ -596,6 +596,24 @@ function drawTrainers() {
       t.role = role; $("trErr").textContent = ""; drawTrainers();
       toast(role === "admin" ? `${t.name} 님이 관리자가 됐어요 (전 지점 관리)` : `${t.name} 님의 관리자 권한을 해제했어요`);
     }));
+    const pw = r.querySelector(".tpw");
+    if (pw) pw.onclick = () => {
+      const box = r.querySelector(".pwbox");
+      if (box) { box.remove(); return; }
+      const d = document.createElement("div"); d.className = "pwbox";
+      d.innerHTML = `<input type="text" autocomplete="off" aria-label="임시 비밀번호" placeholder="임시 비밀번호 (6자 이상)"><button type="button">설정</button>`;
+      const inp2 = d.querySelector("input"), go = d.querySelector("button");
+      inp2.value = "solid" + String(Math.floor(1000 + Math.random() * 9000));
+      go.onclick = () => busy(go, async () => {
+        const v = inp2.value.trim();
+        if (v.length < 6) return $("trErr").textContent = "임시 비밀번호는 6자 이상으로 정해주세요.";
+        const { error } = await sb.rpc("admin_reset_password", { p_id: t.id, p_password: v });
+        if (error) return $("trErr").textContent = error.message.replace(/^.*?: /, "");
+        $("trErr").textContent = ""; d.remove();
+        toast(`${t.name} 님 임시 비밀번호: ${v} — 알려드린 뒤 로그인해서 바꾸라고 안내해주세요.`);
+      });
+      r.querySelector("div").appendChild(d); inp2.select();
+    };
     const del = r.querySelector(".tdel");
     if (del) del.onclick = () => confirmBtn(del, "정말 삭제", () => busy(del, async () => {
       const { error } = await sb.rpc("delete_trainer", { p_id: t.id });

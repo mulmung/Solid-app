@@ -184,3 +184,7 @@ body{margin:0}
 .trow .temail{height:36px;font-size:13px}
 .trow .tact,.trow .tdel{height:34px}
 .trow .trole{height:34px;color:var(--accent)}
+.trow .tpw{height:34px}
+.pwbox{display:flex;gap:6px;margin-top:4px}
+.pwbox input{flex:1;min-width:0;height:36px;border:1px solid var(--accent);border-radius:8px;padding:0 10px;background:var(--surface);font-family:var(--mono)}
+.pwbox button{border:0;background:var(--accent);color:var(--on-accent);border-radius:8px;padding:0 12px;font-weight:700}
