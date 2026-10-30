@@ -736,6 +736,8 @@ $("aForm").onsubmit = e => { e.preventDefault(); busy($("aForm").querySelector("
 function shift(n) { cur.setDate(cur.getDate() + n); render(); }
 $("prev").onclick = () => shift(-1); $("next").onclick = () => shift(1);
 $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
+// 노트북 브라우저: 날짜·월 칸 어디를 눌러도 달력이 열리게
+document.querySelectorAll('input[type="date"], input[type="month"], input[type="time"]').forEach(inp => inp.addEventListener("click", () => { try { inp.showPicker(); } catch (e) {} }));
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
 $("vTrainer").onclick = () => { view = "trainer"; render(); }; $("vTime").onclick = () => { view = "time"; render(); };
 $("tabS").onclick = () => { if (ledgerId) leaveLedger(); tab = "sched"; render(); };

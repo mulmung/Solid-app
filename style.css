@@ -189,3 +189,5 @@ body{margin:0}
 .pwbox{display:flex;gap:6px;margin-top:4px}
 .pwbox input{flex:1;min-width:0;height:36px;border:1px solid var(--accent);border-radius:8px;padding:0 10px;background:var(--surface);font-family:var(--mono)}
 .pwbox button{border:0;background:var(--accent);color:var(--on-accent);border-radius:8px;padding:0 12px;font-weight:700}
+.datelabel{cursor:pointer}
+.datelabel input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
