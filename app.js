@@ -92,7 +92,7 @@ async function fetchAll(table, select, build) {
 }
 const mapTrainer = r => ({ id: r.id, name: r.name, email: r.email, role: r.role, active: r.active, linked: !!r.user_id });
 const mapAthlete = r => ({ id: r.id, name: r.name, team: r.team, plan: r.plan, price: r.price, by: r.birth_year });
-const mapPay = r => ({ id: r.id, branch: r.branch_id, aid: r.athlete_id, kind: r.kind, date: r.date, count: r.count, price: r.price, vat: r.vat, method: r.method, memo: r.memo, month: r.month, lessonId: r.lesson_id });
+const mapPay = r => ({ id: r.id, branch: r.branch_id, aid: r.athlete_id, kind: r.kind, date: r.date, count: r.count, used: r.used || 0, price: r.price, vat: r.vat, method: r.method, memo: r.memo, month: r.month, lessonId: r.lesson_id });
 function mapLesson(r, rows) {
   const att = {}, ids = [];
   (rows || []).forEach(x => { ids.push(x.athlete_id); if (x.status) att[x.athlete_id] = { s: x.status, deduct: x.deduct, memo: x.memo }; });
@@ -170,7 +170,7 @@ const paysOf = a => payments.filter(p => p.aid === a.id).sort((x, y) => x.date.l
 function status(a) {
   const s = stats[a.id] || { charged: 0, byMonth: {}, unchecked: 0, unpaid: 0 };
   if (a.plan === "pass") {
-    const total = paysOf(a).filter(p => p.kind === "pass" || p.kind === "trial").reduce((n, p) => n + p.count, 0);
+    const total = paysOf(a).filter(p => p.kind === "pass" || p.kind === "trial" || p.kind === "carry").reduce((n, p) => n + p.count - (p.used || 0), 0);
     const left = total - s.charged;
     return { left, total, chip: left < 0 ? ["bad", `${-left}회 초과`] : left === 0 ? ["bad", "재등록 필요"] : left === 1 ? ["warn", "남은 1회"] : ["ok", `남은 ${left}회`] };
   }
@@ -189,10 +189,10 @@ function rounds(a, ls) {
   const ch = ls.filter(l => charged(l.att[a.id]));
   const map = {};
   if (a.plan === "pass") {
-    const units = paysOf(a).filter(p => p.kind === "pass" || p.kind === "trial");
-    let u = 0, n = 0;
+    const units = paysOf(a).filter(p => p.kind === "pass" || p.kind === "trial" || p.kind === "carry");
+    let u = 0, n = units.length ? (units[0].used || 0) : 0;
     ch.forEach(l => {
-      while (u < units.length && n >= units[u].count) { u++; n = 0; }
+      while (u < units.length && n >= units[u].count) { u++; n = u < units.length ? (units[u].used || 0) : 0; }
       if (u < units.length) { n++; map[l.id] = units[u].kind === "trial" ? "체험" : `${n}/${units[u].count}회차`; }
       else map[l.id] = "초과";
     });
@@ -290,6 +290,7 @@ async function openLedger(id) {
 /* ---------- 출석부: 선수별 장부 ---------- */
 function payLabel(p) {
   if (p.kind === "trial") return "체험수업 결제";
+  if (p.kind === "carry") return `이전 ${p.count}회권 이어서 (${p.used}회 사용)`;
   if (p.kind === "pass") return `${p.count}회권 결제`;
   if (p.kind === "month") return `${Number(p.month.slice(5))}월분 정산 (${p.count}회)`;
   const l = (ledgerLessons || []).find(x => x.id === p.lessonId); return `1회 결제${l ? ` · ${md(l.date)} 수업` : ""}`;
@@ -322,7 +323,7 @@ function renderLedger() {
     const b = document.createElement("button"); b.type = "button";
     if (r.t === "p") {
       const p = r.p; b.className = "lr pay";
-      b.innerHTML = `<span class="d">${md(p.date)}<small>${dow(p.date)}</small></span><span class="c"><b>${payLabel(p)}</b><span>${p.method} · ${won(p.price + p.vat)}${p.vat ? " (부가세 포함)" : ""}${p.memo ? " · " + esc(p.memo) : ""}</span></span><span class="rn">결제</span>`;
+      b.innerHTML = `<span class="d">${md(p.date)}<small>${dow(p.date)}</small></span><span class="c"><b>${payLabel(p)}</b><span>${p.kind === "carry" ? `${p.used + 1}회차부터 앱에서 기록` : `${p.method} · ${won(p.price + p.vat)}${p.vat ? " (부가세 포함)" : ""}`}${p.memo ? " · " + esc(p.memo) : ""}</span></span><span class="rn">${p.kind === "carry" ? "이월" : "결제"}</span>`;
       b.onclick = () => openPay(a, p);
     } else {
       const l = r.l, x = l.att[a.id], future = l.date > today;
@@ -415,6 +416,10 @@ const chargedIn = (m) => (ledgerLessons || []).filter(l => l.date.startsWith(m) 
 function setKind(k) {
   pKind = k; press("#pKinds button", "k", k);
   $("pCountBox").hidden = k !== "pass"; $("pMonthBox").hidden = k !== "month"; $("pLessonBox").hidden = k !== "visit";
+  const carry = k === "carry";
+  $("pCarryBox").hidden = !carry; $("pPriceBox").hidden = $("pMethodBox").hidden = $("pTotal").hidden = carry;
+  $("pDateLbl").textContent = carry ? "기준일 (이 날짜 이후 수업부터)" : "결제일";
+  if (carry) carryHint();
   if (!pEdit) {
     if (k === "trial" || k === "visit") $("pPrice").value = pA.price;
     if (k === "pass") $("pPrice").value = $("pCount").value ? pA.price * Number($("pCount").value) : "";
@@ -423,6 +428,11 @@ function setKind(k) {
   if (k === "visit") fillLessons();
   showTotal();
 }
+function carryHint() {
+  const t = Number($("pCarryTotal").value), u = Number($("pCarryUsed").value);
+  $("pCarryHint").textContent = t > 0 && u >= 0 && u < t ? `남은 ${t - u}회 · 앱에서 다음 출석이 ${u + 1}/${t}회차로 기록돼요.` : "종이 출석부 기준으로 넣어주세요. 앱에서 다음 출석부터 이어서 세요.";
+}
+$("pCarryTotal").addEventListener("input", carryHint); $("pCarryUsed").addEventListener("input", carryHint);
 function monthCalc() {
   const m = $("pMonth").value; const n = m ? chargedIn(m) : 0;
   $("pMonthHint").textContent = m ? `${Number(m.slice(5))}월 차감 ${n}회 × ${won(pA.price)} = ${won(n * pA.price)}` : "";
@@ -445,7 +455,8 @@ function openPay(a, p) {
   const st = status(a);
   $("pMonth").value = p && p.month ? p.month : (a.plan === "monthly" && st.open && st.open[0]) || thisMonth();
   $("pPrice").value = p ? p.price : ""; $("pMemo").value = p ? p.memo : "";
-  pMethod = p ? p.method : "카드"; press("#pMethods button", "m", pMethod);
+  $("pCarryTotal").value = p && p.kind === "carry" ? p.count : ""; $("pCarryUsed").value = p && p.kind === "carry" ? p.used : "";
+  pMethod = p && p.method !== "이월" ? p.method : "카드"; press("#pMethods button", "m", pMethod);
   setKind(p ? p.kind : a.plan === "monthly" ? "month" : a.plan === "visit" ? "visit" : "pass");
   showTotal(); show($("paySheet"));
 }
@@ -457,8 +468,14 @@ $("pDel").onclick = () => confirmBtn($("pDel"), "정말 삭제", () => busy($("p
 $("pForm").onsubmit = e => { e.preventDefault(); busy($("pForm").querySelector(".primary"), async () => {
   const price = Number($("pPrice").value);
   const v = { athlete_id: pA.id, branch_id: pEdit ? (pEdit.branch || curBranch) : curBranch, kind: pKind, date: $("pDate").value, price, vat: vatOf(price, pMethod), method: pMethod, memo: $("pMemo").value.trim(), count: 1, month: null, lesson_id: null };
-  if (!v.date) return $("pErr").textContent = "결제일을 입력해주세요.";
-  if ($("pPrice").value === "" || !(price >= 0)) return $("pErr").textContent = "금액을 입력해주세요.";
+  if (!v.date) return $("pErr").textContent = "날짜를 입력해주세요.";
+  if (pKind === "carry") {
+    const t = Number($("pCarryTotal").value), u = Number($("pCarryUsed").value);
+    if (!(t > 0)) return $("pErr").textContent = "회차권 총 횟수를 입력해주세요.";
+    if ($("pCarryUsed").value === "" || !(u >= 0) || u >= t) return $("pErr").textContent = "이미 한 횟수는 0 이상, 총 횟수보다 작게 입력해주세요.";
+    Object.assign(v, { count: t, used: u, price: 0, vat: 0, method: "이월" });
+  } else v.used = 0;
+  if (pKind !== "carry" && $("pPrice").value === "" || !(price >= 0)) return $("pErr").textContent = "금액을 입력해주세요.";
   if (pKind === "pass") { v.count = Number($("pCount").value); if (!(v.count > 0)) return $("pErr").textContent = "횟수를 입력해주세요."; }
   if (pKind === "month") { v.month = $("pMonth").value; if (!v.month) return $("pErr").textContent = "정산 월을 선택해주세요."; v.count = chargedIn(v.month); }
   if (pKind === "visit") { v.lesson_id = Number($("pLesson").value); if (!v.lesson_id) return $("pErr").textContent = "결제할 수업을 선택해주세요."; }
@@ -807,11 +824,11 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
         lessonRows.push({ ...base, "선수/학교": (A(id) || {}).name || "(삭제된 선수)", 상태: x ? ST[x.s] : "미체크", 차감: charged(x) ? "차감" : "", 메모: x ? x.memo : "" });
       });
     });
-    const KIND = { trial: "체험수업", pass: "회차권", month: "월 정산", visit: "1회 결제" };
+    const KIND = { trial: "체험수업", pass: "회차권", month: "월 정산", visit: "1회 결제", carry: "이전 회차 이어서" };
     const byMethod = {};
     const payRows = ps.map(mapPay).map(p => {
-      const total = p.price + p.vat; byMethod[p.method] = (byMethod[p.method] || 0) + total;
-      return { 결제일: p.date, 지점: BN(p.branch), 선수: (A(p.aid) || {}).name || "(삭제된 선수)", 항목: KIND[p.kind], 횟수: p.kind === "pass" || p.kind === "month" ? p.count : "", "정산 월": p.month || "", "금액(부가세 별도)": p.price, 부가세: p.vat, "받은 금액": total, 결제수단: p.method, 메모: p.memo };
+      const total = p.price + p.vat; if (p.kind !== "carry") byMethod[p.method] = (byMethod[p.method] || 0) + total;
+      return { 결제일: p.date, 지점: BN(p.branch), 선수: (A(p.aid) || {}).name || "(삭제된 선수)", 항목: KIND[p.kind], 횟수: p.kind === "carry" ? `${p.count}회 중 ${p.used}회 사용` : p.kind === "pass" || p.kind === "month" ? p.count : "", "정산 월": p.month || "", "금액(부가세 별도)": p.price, 부가세: p.vat, "받은 금액": total, 결제수단: p.method, 메모: p.memo };
     });
     const pool = one ? athletes.filter(a => inBranch(athleteBr, a.id, expScope)) : athletes;
     const athRows = pool.slice().sort((x, y) => x.name.localeCompare(y.name, "ko")).map(a => ({

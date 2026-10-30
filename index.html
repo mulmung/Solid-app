@@ -130,17 +130,25 @@
         <button type="button" data-k="pass">회차권<small>N회 선결제</small></button>
         <button type="button" data-k="month">월 정산<small>한 달 진행분</small></button>
         <button type="button" data-k="visit">1회 결제<small>올 때마다</small></button>
+        <button type="button" data-k="carry" style="grid-column:1/-1">이전 회차 이어서<small>앱 쓰기 전에 결제한 회차권 · 금액 없음</small></button>
       </div></div>
+    <div id="pCarryBox" hidden style="display:grid;gap:10px">
+      <div class="two">
+        <div class="field"><label for="pCarryTotal">회차권 총 횟수</label><input id="pCarryTotal" type="number" min="1" inputmode="numeric" placeholder="예: 10"></div>
+        <div class="field"><label for="pCarryUsed">이미 한 횟수</label><input id="pCarryUsed" type="number" min="0" inputmode="numeric" placeholder="예: 6"></div>
+      </div>
+      <span class="hint" id="pCarryHint">종이 출석부 기준으로 넣어주세요. 앱에서 다음 출석부터 이어서 세요.</span>
+    </div>
     <div class="field" id="pCountBox"><label for="pCount">횟수</label>
       <div class="presets"><button type="button" data-c="10">10회</button><button type="button" data-c="4">4회</button></div>
       <input id="pCount" type="number" min="1" inputmode="numeric" placeholder="직접 입력"></div>
     <div class="field" id="pMonthBox" hidden><label for="pMonth">정산 월</label><input id="pMonth" type="month"><span class="hint" id="pMonthHint"></span></div>
     <div class="field" id="pLessonBox" hidden><label for="pLesson">어느 수업 결제인가요</label><select id="pLesson"></select></div>
     <div class="two">
-      <div class="field"><label for="pDate">결제일</label><input id="pDate" type="date"></div>
-      <div class="field"><label for="pPrice">금액 (부가세 별도)</label><input id="pPrice" type="number" min="0" inputmode="numeric"></div>
+      <div class="field"><label for="pDate" id="pDateLbl">결제일</label><input id="pDate" type="date"></div>
+      <div class="field" id="pPriceBox"><label for="pPrice">금액 (부가세 별도)</label><input id="pPrice" type="number" min="0" inputmode="numeric"></div>
     </div>
-    <div class="field"><span class="lbl">결제 수단</span>
+    <div class="field" id="pMethodBox"><span class="lbl">결제 수단</span>
       <div class="opts" id="pMethods">
         <button type="button" data-m="카드">카드</button>
         <button type="button" data-m="현금">현금</button>
