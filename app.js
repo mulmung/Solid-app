@@ -260,17 +260,24 @@ async function renderSched() {
 }
 
 /* ---------- 출석부: 선수 목록 ---------- */
+let listFilter = null; // null | "pay" | "unc"
+const needsPay = a => status(a).chip[0] === "bad";
+const hasUnc = a => ((stats[a.id] || {}).unchecked || 0) > 0;
 function renderList() {
   const q = $("aSearch").value.trim();
   const here = athletesHere();
-  const list = here.filter(a => match(a, q)).sort((x, y) => x.name.localeCompare(y.name, "ko"));
-  const need = here.filter(a => ["bad", "warn"].includes(status(a).chip[0])).length;
+  const need = here.filter(needsPay).length;
   const unc = here.reduce((s, a) => s + ((stats[a.id] || {}).unchecked || 0), 0);
-  $("summary").innerHTML = `<span>${esc(BN(curBranch))} 선수 ${here.length}명</span>${need ? `<span class="chip bad">결제 확인 ${need}명</span>` : ""}${unc ? `<span class="chip warn">출석 미체크 ${unc}건</span>` : ""}`;
+  if ((listFilter === "pay" && !need) || (listFilter === "unc" && !unc)) listFilter = null;
+  const list = here.filter(a => match(a, q) && (listFilter !== "pay" || needsPay(a)) && (listFilter !== "unc" || hasUnc(a)))
+    .sort((x, y) => x.name.localeCompare(y.name, "ko"));
+  const chip = (key, cls, text) => `<button type="button" class="chip ${cls} fchip" data-f="${key}" aria-pressed="${listFilter === key}">${text}${listFilter === key ? " ✕" : ""}</button>`;
+  $("summary").innerHTML = `<span>${esc(BN(curBranch))} 선수 ${here.length}명</span>${need ? chip("pay", "bad", `결제 확인 ${need}명`) : ""}${unc ? chip("unc", "warn", `출석 미체크 ${unc}건`) : ""}${listFilter ? `<span class="hint">${list.length}명 보는 중</span>` : ""}`;
+  $("summary").querySelectorAll(".fchip").forEach(b => b.onclick = () => { listFilter = listFilter === b.dataset.f ? null : b.dataset.f; renderList(); });
   const box = $("list"); box.innerHTML = "";
   if (!curBranch) { box.innerHTML = `<div class="empty">배정된 지점이 없어요.<br>관리자에게 지점 배정을 요청하세요.</div>`; return; }
   if (!here.length) { box.innerHTML = `<div class="empty">아직 등록된 선수가 없어요.<br>아래 <b>+ 선수 등록</b>으로 시작하세요.</div>`; return; }
-  if (!list.length) { box.innerHTML = `<div class="empty">'${esc(q)}'에 맞는 선수가 없어요.</div>`; return; }
+  if (!list.length) { box.innerHTML = `<div class="empty">${q ? `'${esc(q)}'에 맞는 선수가 없어요.` : "해당하는 선수가 없어요."}</div>`; return; }
   const wrap = document.createElement("div"); wrap.className = "plist";
   list.forEach(a => {
     const s = status(a); const u = (stats[a.id] || {}).unchecked || 0; const b = document.createElement("button"); b.className = "prow";
