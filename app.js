@@ -10,7 +10,7 @@ const sb = window.supabase.createClient(window.SOLID_CONFIG.SUPABASE_URL, window
 const DUR = { personal: 80, group: 80, team: 90 };
 const LABEL = { personal: "개인", group: "그룹", team: "단체" };
 const PLAN = { pass: "회차권", monthly: "월 정산", visit: "매회 결제" };
-const ST = { present: "출석", same: "당일취소", prior: "사전취소" };
+const ST = { present: "출석", prev: "이전 결제분", same: "당일취소", prior: "사전취소" };
 const VATM = ["카드", "계좌이체"]; // 부가세 10% 붙는 결제 수단
 const days = ["일", "월", "화", "수", "목", "금", "토"];
 const pad = n => String(n).padStart(2, "0");
@@ -223,7 +223,7 @@ function card(l, bad, showTrainer) {
     const box = el.querySelector(".names");
     l.ids.forEach(id => {
       const a = A(id); if (!a) return; const x = l.att[id]; const s = document.createElement("span");
-      s.className = "nm " + (x ? x.s : ""); s.textContent = a.name + (x && x.s !== "present" ? ` · ${ST[x.s]}` : ""); box.appendChild(s);
+      s.className = "nm " + (x ? x.s : ""); s.textContent = a.name + (x && x.s !== "present" && x.s !== "prev" ? ` · ${ST[x.s]}` : ""); box.appendChild(s);
     });
   }
   return el;
@@ -327,9 +327,9 @@ function renderLedger() {
       b.onclick = () => openPay(a, p);
     } else {
       const l = r.l, x = l.att[a.id], future = l.date > today;
-      const label = x ? ST[x.s] + (x.s === "same" ? (x.deduct ? " (차감)" : " (미차감)") : "") : future ? "예정" : "미체크";
+      const label = x ? (x.s === "prev" ? "출석 · 이전 결제분" : ST[x.s]) + (x.s === "same" ? (x.deduct ? " (차감)" : " (미차감)") : "") : future ? "예정" : "미체크";
       b.className = "lr" + (future ? " future" : "") + (x && !charged(x) ? " muted" : "");
-      const rn = map[l.id] || "";
+      const rn = map[l.id] || (x && x.s === "prev" ? "이전" : "");
       b.innerHTML = `<span class="d">${md(l.date)}<small>${dow(l.date)}</small></span>
         <span class="c"><b style="${!x && !future ? "color:var(--warn)" : x && x.s === "same" ? "color:var(--danger)" : ""}">${label}</b><span>${l.branch !== curBranch ? `<b style="color:var(--accent);font-weight:600">${esc(BN(l.branch))}</b> · ` : ""}${l.start} · ${LABEL[l.type]} · ${esc(TN(l.trainer))}${x && x.memo ? " · " + esc(x.memo) : ""}</span></span>
         <span class="rn" style="${rn === "초과" ? "color:var(--danger)" : ""}">${rn}</span>`;
@@ -398,7 +398,7 @@ function openAtt(a, l) {
 }
 $("atSave").onclick = () => busy($("atSave"), async () => {
   const row = !atS ? { status: null, deduct: false, memo: "" }
-    : { status: atS, deduct: atS === "present" ? true : atS === "prior" ? false : $("atDeduct").checked, memo: $("atMemo").value.trim() };
+    : { status: atS, deduct: atS === "present" ? true : atS === "same" ? $("atDeduct").checked : false, memo: $("atMemo").value.trim() };
   const { error } = await sb.from("lesson_athletes").update(row).eq("lesson_id", atL.id).eq("athlete_id", atA.id);
   if (error) return $("atErr").textContent = friendly(error);
   close(); toast("저장했어요"); refresh();
@@ -813,14 +813,14 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
       fetchAll("payments", "*", q => scope(q.gte("date", from).lte("date", to)).order("date")),
     ]);
     const lessonRows = [];
-    let cP = 0, cS = 0, cSd = 0, cPr = 0, cU = 0;
+    let cP = 0, cPv = 0, cS = 0, cSd = 0, cPr = 0, cU = 0;
     ls.forEach(r => {
       const l = mapLesson(r, r.lesson_athletes);
       const base = { 날짜: l.date, 요일: dow(l.date), 지점: BN(l.branch), 시작: l.start, 종료: endOf(l), 종류: LABEL[l.type], 트레이너: TN(l.trainer) };
       if (l.type === "team") { lessonRows.push({ ...base, "선수/학교": `${l.team} ${l.grade}`, 상태: "", 차감: "", 메모: "" }); return; }
       l.ids.forEach(id => {
         const x = l.att[id];
-        if (!x) cU++; else if (x.s === "present") cP++; else if (x.s === "prior") cPr++; else { cS++; if (x.deduct) cSd++; }
+        if (!x) cU++; else if (x.s === "present") cP++; else if (x.s === "prev") cPv++; else if (x.s === "prior") cPr++; else { cS++; if (x.deduct) cSd++; }
         lessonRows.push({ ...base, "선수/학교": (A(id) || {}).name || "(삭제된 선수)", 상태: x ? ST[x.s] : "미체크", 차감: charged(x) ? "차감" : "", 메모: x ? x.memo : "" });
       });
     });
@@ -836,7 +836,7 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     const sum = [
       ["솔리드 피지컬 트레이닝 데이터"], ["기간", `${from} ~ ${to}`], ["지점", one ? BN(expScope) : "전 지점"], ["만든 날", todayIso()], [],
       ["결제 합계 (받은 금액)"], ...["카드", "계좌이체", "현금"].map(m => [m, byMethod[m] || 0]), ["합계", Object.values(byMethod).reduce((a, b) => a + b, 0)], [],
-      ["출석 현황 (개인·그룹)"], ["출석", cP], ["당일취소", cS], ["  그중 차감", cSd], ["사전취소", cPr], ["미체크", cU], ["수업 수", ls.length],
+      ["출석 현황 (개인·그룹)"], ["출석", cP], ["출석 (이전 결제분)", cPv], ["당일취소", cS], ["  그중 차감", cSd], ["사전취소", cPr], ["미체크", cU], ["수업 수", ls.length],
     ];
     const wb = XLSX.utils.book_new();
     const add = (name, ws, widths) => { if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };

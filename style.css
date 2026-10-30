@@ -81,6 +81,7 @@ main .wrap{padding-block:16px 120px;display:grid;gap:16px}
 .nm{font-size:13px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
 .nm.present{background:var(--ok-bg);color:var(--ok);border-color:transparent}
 .nm.same{background:var(--danger-bg);color:var(--danger);border-color:transparent}
+.nm.prev{background:var(--ok-bg);color:var(--ok);border-color:transparent;opacity:.75}
 .nm.prior{color:var(--muted);text-decoration:line-through}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:28px 16px;text-align:center;color:var(--muted)}
 
