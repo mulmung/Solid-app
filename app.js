@@ -152,7 +152,9 @@ async function loadLedger(aid) {
 }
 
 /* 저장 후 화면 갱신 */
+let lastRefresh = 0;
 async function refresh() {
+  lastRefresh = Date.now();
   dayCache = {};
   try {
     await loadBase();
@@ -362,7 +364,7 @@ let openSheetEl = null;
 /* 휴대폰 뒤로가기: 창을 열거나 선수 장부로 들어갈 때 기록을 하나 쌓고, 뒤로가기를 누르면 그 기록을 되돌림 */
 let ignorePop = false;
 const layer = () => history.state && history.state.layer;
-function hideSheet() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; if (updatePending) setTimeout(tryReload, 300); }
+function hideSheet() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; if (updatePending) setTimeout(tryReload, 300); else if (livePending) setTimeout(liveApply, 300); }
 function show(el) {
   const wasOpen = !!openSheetEl;
   if (openSheetEl) openSheetEl.hidden = true; openSheetEl = el; $("scrim").hidden = false; el.hidden = false;
@@ -755,6 +757,23 @@ $("branchSel").onchange = e => { setBranch(Number(e.target.value)); if (ledgerId
 $("fab").onclick = () => tab === "sched" ? openLesson() : openAthForm();
 // 다른 트레이너가 바꾼 내용을 반영: 앱으로 돌아올 때 새로고침
 let lastLoad = Date.now();
+/* ---------- 실시간 반영 ----------
+ * 다른 트레이너가 데이터를 바꾸면 신호를 받아 화면을 다시 불러옴.
+ * 입력 창이 열려 있으면 미뤘다가 닫을 때 반영. 짧은 시간 여러 변경은 한 번에 처리. */
+let liveCh = null, livePending = false, liveTimer = null;
+function liveApply() {
+  livePending = false;
+  if (openSheetEl) { livePending = true; return; }
+  if (Date.now() - lastRefresh < 2000) return; // 방금 내가 저장하면서 이미 새로 불러옴
+  refresh();
+}
+function onLive() { clearTimeout(liveTimer); liveTimer = setTimeout(liveApply, 1200); }
+function startLive() {
+  stopLive();
+  liveCh = sb.channel("solid-live").on("postgres_changes", { event: "*", schema: "public" }, onLive).subscribe();
+}
+function stopLive() { if (liveCh) { sb.removeChannel(liveCh); liveCh = null; } }
+
 /* ---------- 자동 업데이트 ----------
  * 앱 파일(index.html, app.js, style.css)의 버전 표시(ETag)를 처음 열 때 기억해두고,
  * 앱으로 돌아올 때와 5분마다 바뀌었는지 확인. 바뀌었으면 입력 창이 닫혀 있을 때 새로고침. */
@@ -905,7 +924,7 @@ $("pwForm").onsubmit = e => { e.preventDefault(); busy($("pwForm").querySelector
 }); };
 
 async function enter(session) {
-  if (!session) { me = null; $("appView").hidden = true; $("authView").hidden = false; return; }
+  if (!session) { me = null; stopLive(); $("appView").hidden = true; $("authView").hidden = false; return; }
   const { data, error } = await sb.from("trainers").select("id,name,email,role,active,user_id").eq("user_id", session.user.id).maybeSingle();
   if (error || !data || !data.active) {
     await sb.auth.signOut();
@@ -917,7 +936,7 @@ async function enter(session) {
   $("authView").hidden = true; $("appView").hidden = false;
   $("list").innerHTML = `<div class="loading">불러오는 중…</div>`;
   try { await loadBase(); } catch (e) { toast(friendly(e), true); }
-  lastLoad = Date.now(); render();
+  lastLoad = Date.now(); render(); startLive();
 }
 let entered; // undefined → 첫 이벤트(로그인 안 된 상태 포함)는 항상 처리
 sb.auth.onAuthStateChange((evt, session) => {
