@@ -144,12 +144,13 @@ async function loadDay(d) {
   dayCache[`${curBranch}|${d}`] = data.map(r => mapLesson(r, r.lesson_athletes));
 }
 
-async function loadLedger(aid) {
+async function fetchAthleteLessons(aid) {
   const rows = await fetchAll("lesson_athletes",
     "athlete_id,status,deduct,memo,lesson:lessons(id,type,trainer_id,branch_id,date,start_time,team,grade)",
     q => q.eq("athlete_id", aid));
-  ledgerLessons = rows.filter(r => r.lesson).map(r => mapLesson(r.lesson, [r]));
+  return rows.filter(r => r.lesson).map(r => mapLesson(r.lesson, [r]));
 }
+async function loadLedger(aid) { ledgerLessons = await fetchAthleteLessons(aid); }
 
 /* 저장 후 화면 갱신 */
 let lastRefresh = 0;
@@ -224,8 +225,12 @@ function card(l, bad, showTrainer) {
   if (l.type !== "team") {
     const box = el.querySelector(".names");
     l.ids.forEach(id => {
-      const a = A(id); if (!a) return; const x = l.att[id]; const s = document.createElement("span");
-      s.className = "nm " + (x ? x.s : ""); s.textContent = a.name + (x && x.s !== "present" && x.s !== "prev" ? ` · ${ST[x.s]}` : ""); box.appendChild(s);
+      const a = A(id); if (!a) return; const x = l.att[id];
+      const tap = canEdit(l) && l.date <= todayIso();
+      const s = document.createElement(tap ? "button" : "span");
+      s.className = "nm " + (x ? x.s : "") + (tap ? " tap" : "");
+      if (tap) { s.type = "button"; s.onclick = () => openAtt(a, l); s.setAttribute("aria-label", `${a.name} 출석 기록`); }
+      else s.onclick = null; s.textContent = a.name + (x && x.s !== "present" && x.s !== "prev" ? ` · ${ST[x.s]}` : ""); box.appendChild(s);
     });
   }
   return el;
@@ -404,6 +409,36 @@ function openAtt(a, l) {
   $("atSub").textContent = `${l.start}~${endOf(l)} · ${LABEL[l.type]} · ${TN(l.trainer)}`;
   $("atDeduct").checked = x ? x.deduct : true; $("atDeduct").dataset.touched = x && x.s === "same" ? "1" : "";
   $("atMemo").value = x ? x.memo : ""; setAt(x ? x.s : ""); show($("attSheet"));
+  fillRoundInfo(a, l);
+}
+/* 출석 창 위쪽: "이번 출석 시" 회차와 남은 횟수 */
+async function fillRoundInfo(a, l) {
+  const box = $("atRound"); box.textContent = "회차 확인 중…"; box.className = "roundinfo";
+  try {
+    const ls = (await fetchAthleteLessons(a.id)).sort(sortL);
+    if (atL !== l || atA !== a) return; // 그사이 다른 창을 염
+    // 이 수업을 '출석'으로 가정해서 계산
+    const sim = ls.map(x => x.id === l.id ? { ...x, att: { ...x.att, [a.id]: { s: "present", deduct: true, memo: "" } } } : x);
+    if (!sim.some(x => x.id === l.id)) sim.push({ ...l, att: { [a.id]: { s: "present", deduct: true, memo: "" } } });
+    sim.sort(sortL);
+    const map = rounds(a, sim);
+    const used = sim.filter(x => charged(x.att[a.id])).length;
+    const now = map[l.id] || "";
+    let text = "", cls = "";
+    if (a.plan === "pass") {
+      const total = paysOf(a).filter(p => p.kind === "pass" || p.kind === "trial" || p.kind === "carry").reduce((n, p) => n + p.count - (p.used || 0), 0);
+      const left = total - used;
+      if (now === "초과" || !total) { text = `결제된 회차가 없어요 · 출석하면 ${total ? -left + "회 초과" : "초과"}`; cls = "bad"; }
+      else { text = `이번 출석 시 ${now === "체험" ? "체험수업" : now} · 남은 ${left}회`; cls = left === 0 ? "bad" : left === 1 ? "warn" : ""; if (left === 0) text += " (재등록 필요)"; }
+    } else if (a.plan === "monthly") {
+      text = `이번 출석 시 ${now} · 월 정산`;
+    } else {
+      const paidL = new Set(paysOf(a).filter(p => p.kind === "visit").map(p => p.lessonId));
+      const unpaid = sim.filter(x => charged(x.att[a.id]) && !paidL.has(x.id)).length;
+      text = `이번 출석 시 ${now} · 미결제 ${unpaid}건`; cls = unpaid ? "warn" : "";
+    }
+    box.textContent = text; box.className = "roundinfo " + cls;
+  } catch (e) { box.textContent = ""; }
 }
 $("atSave").onclick = () => busy($("atSave"), async () => {
   const row = !atS ? { status: null, deduct: false, memo: "" }

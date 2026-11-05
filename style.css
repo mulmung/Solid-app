@@ -193,3 +193,9 @@ body{margin:0}
 .datelabel input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .fchip{border:1px solid transparent;cursor:pointer;font:inherit;font-size:12px;font-weight:600}
 .fchip[aria-pressed="true"]{border-color:currentColor;box-shadow:0 0 0 1px currentColor inset}
+.nm.tap{cursor:pointer;font:inherit;font-size:13px;font-weight:600;box-shadow:0 0 0 1px var(--accent) inset}
+.nm.tap:not(.present):not(.prev):not(.same){background:var(--surface);color:var(--fg)}
+.roundinfo{font-size:14px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-family:var(--sans)}
+.roundinfo:empty{display:none}
+.roundinfo.warn{color:var(--warn);background:var(--warn-bg)}
+.roundinfo.bad{color:var(--danger);background:var(--danger-bg)}
