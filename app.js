@@ -362,7 +362,7 @@ let openSheetEl = null;
 /* 휴대폰 뒤로가기: 창을 열거나 선수 장부로 들어갈 때 기록을 하나 쌓고, 뒤로가기를 누르면 그 기록을 되돌림 */
 let ignorePop = false;
 const layer = () => history.state && history.state.layer;
-function hideSheet() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; }
+function hideSheet() { if (openSheetEl) openSheetEl.hidden = true; openSheetEl = null; $("scrim").hidden = true; if (updatePending) setTimeout(tryReload, 300); }
 function show(el) {
   const wasOpen = !!openSheetEl;
   if (openSheetEl) openSheetEl.hidden = true; openSheetEl = el; $("scrim").hidden = false; el.hidden = false;
@@ -755,6 +755,40 @@ $("branchSel").onchange = e => { setBranch(Number(e.target.value)); if (ledgerId
 $("fab").onclick = () => tab === "sched" ? openLesson() : openAthForm();
 // 다른 트레이너가 바꾼 내용을 반영: 앱으로 돌아올 때 새로고침
 let lastLoad = Date.now();
+/* ---------- 자동 업데이트 ----------
+ * 앱 파일(index.html, app.js, style.css)의 버전 표시(ETag)를 처음 열 때 기억해두고,
+ * 앱으로 돌아올 때와 5분마다 바뀌었는지 확인. 바뀌었으면 입력 창이 닫혀 있을 때 새로고침. */
+const APP_FILES = ["/", "/app.js", "/style.css"];
+let baseTags = null, updatePending = false;
+async function fileTags() {
+  const tags = await Promise.all(APP_FILES.map(async f => {
+    const r = await fetch(f, { method: "HEAD", cache: "no-store" });
+    return r.headers.get("etag") || r.headers.get("last-modified") || "";
+  }));
+  return tags.join("|");
+}
+function busyTyping() {
+  const el = document.activeElement;
+  // 입력 창이 열려 있거나, 로그인 칸 등에 입력 중일 때 (검색창·지점 선택은 제외)
+  return !!openSheetEl || (!!el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.id !== "aSearch" && el.id !== "branchSel");
+}
+function tryReload() {
+  if (!updatePending) return;
+  if (busyTyping()) return; // 입력 중이면 창을 닫을 때까지 기다림
+  location.reload();
+}
+async function checkUpdate() {
+  try {
+    const t = await fileTags();
+    if (!t.replace(/\|/g, "")) return; // 버전 정보를 못 받으면 건너뜀
+    if (baseTags === null) { baseTags = t; return; }
+    if (t !== baseTags) { updatePending = true; tryReload(); }
+  } catch (e) { /* 오프라인 등은 무시 */ }
+}
+checkUpdate();
+document.addEventListener("focusout", () => { if (updatePending) setTimeout(tryReload, 300); });
+setInterval(() => { if (!document.hidden) checkUpdate(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && me && Date.now() - lastLoad > 30000) { lastLoad = Date.now(); refresh(); } });
 
 /* ---------- 로그인 ---------- */
