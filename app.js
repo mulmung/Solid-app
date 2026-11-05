@@ -869,6 +869,12 @@ $("authForm").onsubmit = e => { e.preventDefault(); busy($("authBtn"), async () 
   }
 }); };
 $("logoutBtn").onclick = async () => { await sb.auth.signOut(); };
+/* 톱니바퀴 설정 메뉴 */
+function setGear(open) { $("gearMenu").hidden = !open; $("gearBtn").setAttribute("aria-expanded", open); }
+$("gearBtn").onclick = e => { e.stopPropagation(); setGear($("gearMenu").hidden); };
+$("gearMenu").addEventListener("click", e => { if (e.target.closest("button")) setGear(false); });
+document.addEventListener("click", e => { if (!$("gearMenu").hidden && !e.target.closest(".gearwrap")) setGear(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") setGear(false); });
 /* ---------- 데이터 내보내기 (관리자) ---------- */
 let expScope = "cur"; // "all" 또는 지점 번호
 function expRange(r) {
@@ -967,7 +973,8 @@ async function enter(session) {
     return;
   }
   me = mapTrainer(data);
-  $("meLabel").textContent = `${me.name} 트레이너${isAdmin() ? " · 관리자" : ""}`;
+  $("meLabel").textContent = `${me.name} 트레이너`;
+  $("meSub").textContent = isAdmin() ? "관리자 · 전 지점" : "트레이너";
   $("authView").hidden = true; $("appView").hidden = false;
   $("list").innerHTML = `<div class="loading">불러오는 중…</div>`;
   try { await loadBase(); } catch (e) { toast(friendly(e), true); }

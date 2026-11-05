@@ -199,3 +199,24 @@ body{margin:0}
 .roundinfo:empty{display:none}
 .roundinfo.warn{color:var(--warn);background:var(--warn-bg)}
 .roundinfo.bad{color:var(--danger);background:var(--danger-bg)}
+
+/* ---- 상단 아이콘 메뉴 ---- */
+.hdr{display:flex;align-items:center;gap:10px;min-width:0}
+.hdr .logo{font-size:13px;letter-spacing:.08em;color:var(--accent);font-weight:700;white-space:nowrap}
+.icons{display:flex;gap:8px;margin-left:auto;align-items:center}
+.ib{width:44px;height:44px;border-radius:50%;border:0;background:#eef1f6;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .15s,color .15s;flex:none}
+.ib svg{width:22px;height:22px}
+.ib[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.ib[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+@media (hover:hover){.ib:hover:not([aria-pressed="true"]){background:var(--accent-soft);color:var(--accent)}}
+.isep{width:1px;height:28px;background:var(--line)}
+.gearwrap{position:relative}
+.gmenu{position:absolute;right:0;top:52px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgb(19 33 58/.14);min-width:200px;padding:6px;display:grid;z-index:30}
+.gmenu .who{padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:4px;display:grid}
+.gmenu .who b{font-size:14px}
+.gmenu .who span{font-size:12px;color:var(--muted)}
+.gmenu button{border:0;background:none;text-align:left;padding:10px;border-radius:8px;font-size:14px;font-weight:500;display:flex;gap:10px;align-items:center;cursor:pointer}
+.gmenu button:hover{background:var(--bg)}
+.gmenu button svg{width:18px;height:18px;color:var(--muted);flex:none}
+.gmenu .out,.gmenu .out svg{color:var(--danger)}
+@media (max-width:480px){.hdr .logo{display:none}.ib{width:40px;height:40px}.ib svg{width:20px;height:20px}.icons{gap:6px}}
