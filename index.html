@@ -75,8 +75,7 @@
     <div id="hList" hidden><input class="search" id="aSearch" placeholder="이름, 초성(ㄱㅁㅈ), 소속으로 검색" aria-label="선수 검색"></div>
     <div id="hWork" hidden style="display:grid;gap:10px">
       <div class="back"><button id="wkBack">‹ 스케줄</button><div class="who"><b id="wkTitle">출근 기록</b></div></div>
-      <div class="datebar"><button class="navb" id="wkPrev" aria-label="이전 달">‹</button><div class="datelabel"><strong id="wkMonth"></strong></div><button class="navb" id="wkNext" aria-label="다음 달">›</button></div>
-      <div class="seg" role="group" aria-label="보기 방식"><button id="wkDate" aria-pressed="true">날짜별</button><button id="wkTrainer" aria-pressed="false">트레이너별</button></div>
+      <div class="datebar"><button class="navb" id="wkPrev" aria-label="이전 날">‹</button><div class="datelabel"><strong id="wkMonth"></strong><small id="wkSub"></small><input type="date" id="wkPick" aria-label="날짜 선택"></div><button class="navb" id="wkNext" aria-label="다음 날">›</button></div>
     </div>
     <div id="hLedger" hidden class="back"><button id="backBtn">‹ 목록</button><div class="who"><b id="lgName"></b><span id="lgSub"></span></div></div>
   </div>

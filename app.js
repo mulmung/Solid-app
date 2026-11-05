@@ -56,7 +56,7 @@ let tab = "sched", view = "trainer", ledgerId = null;
 
 const T = id => trainers.find(t => t.id === id);
 const B = id => branches.find(b => b.id === id);
-const BN = id => (B(id) || {}).name || "다른 지점";
+const BN = id => (B(id) || {}).name || Object.values(workCache).flat().find(b => b && b.id === id)?.name || "다른 지점";
 const inBranch = (map, id, b) => !!(map[id] && map[id].has(b));
 const athletesHere = () => athletes.filter(a => inBranch(athleteBr, a.id, curBranch));
 function setBranch(id) { curBranch = id; try { localStorage.setItem("solid.branch", String(id)); } catch (e) {} }
@@ -305,75 +305,64 @@ function checkinCard() {
   return box;
 }
 
-/* ---------- 출근 기록 화면 ---------- */
-let workOpen = false, workView = "date", workMonth = null, workCache = {};
+/* ---------- 출근 기록 화면 (하루 단위, 전 지점) ---------- */
+let workOpen = false, workDay = null, workCache = {};
 function openWork() {
   if (layer() !== "work") history.pushState({ layer: "work" }, "");
-  workOpen = true; const t = parse(todayIso()); workMonth = workMonth || new Date(t.getFullYear(), t.getMonth(), 1);
+  workOpen = true; workDay = workDay || parse(todayIso());
   render(); window.scrollTo(0, 0);
 }
 function leaveWork() { if (layer() === "work") history.back(); else { workOpen = false; render(); } }
-function workRange() { const a = workMonth, b = new Date(a.getFullYear(), a.getMonth() + 1, 0); return [iso(a), iso(b)]; }
 async function renderWork() {
-  $("wkMonth").textContent = `${workMonth.getFullYear()}년 ${workMonth.getMonth() + 1}월`;
-  $("wkTitle").textContent = `출근 기록 · ${BN(curBranch)}`;
-  $("wkDate").setAttribute("aria-pressed", workView === "date"); $("wkTrainer").setAttribute("aria-pressed", workView === "trainer");
-  const [from, to] = workRange(); const key = `${curBranch}|${from}`;
+  const d = iso(workDay), today = todayIso();
+  $("wkMonth").textContent = `${workDay.getMonth() + 1}월 ${workDay.getDate()}일 (${days[workDay.getDay()]})`;
+  $("wkSub").textContent = d === today ? "오늘" : `${workDay.getFullYear()}년`;
+  $("wkPick").value = d; $("wkTitle").textContent = "출근 기록 · 전 지점";
   const box = $("list"); $("summary").innerHTML = "";
-  if (!workCache[key]) {
+  if (d > today) { box.innerHTML = `<div class="empty">아직 지나지 않은 날이에요.</div>`; return; }
+  if (!workCache[d]) {
     box.innerHTML = `<div class="loading">불러오는 중…</div>`;
-    try { workCache[key] = await fetchAll("checkins", "*", q => q.eq("branch_id", curBranch).gte("work_date", from).lte("work_date", to).order("work_date")); }
-    catch (e) { box.innerHTML = `<div class="empty">${esc(friendly(e))}</div>`; return; }
-    if (!workOpen || `${curBranch}|${workRange()[0]}` !== key) return;
+    const { data, error } = await sb.rpc("checkin_board", { p_date: d });
+    if (error) { box.innerHTML = `<div class="empty">${esc(friendly(error))}</div>`; return; }
+    workCache[d] = data || [];
+    if (!workOpen || iso(workDay) !== d) return;
   }
-  const rows = workCache[key]; const mgr = isManagerOf(curBranch); const today = todayIso();
-  const people = trainers.filter(t => (t.active && inBranch(trainerBr, t.id, curBranch)) || rows.some(r => r.trainer_id === t.id))
-    .sort((x, y) => x.name.localeCompare(y.name, "ko"));
-  const by = {}; rows.forEach(r => by[`${r.trainer_id}|${r.work_date}`] = r);
-  const last = to < today ? to : today;
-  $("summary").innerHTML = `<span>출근 ${rows.length}건</span>${mgr ? `<span class="hint">기록을 눌러 수정하거나, 빈 날을 눌러 추가할 수 있어요</span>` : ""}`;
+  const board = workCache[d];
+  let total = 0; board.forEach(b => b.people.forEach(p => { if (p.checkin_branch === b.id) total++; }));
+  $("summary").innerHTML = `<span>전 지점 ${total}명 출근</span>${managedBranches().length ? `<span class="hint">${isAdmin() ? "기록을 눌러 수정하거나, 빈 칸을 눌러 추가할 수 있어요" : "관리하는 지점은 눌러서 수정·추가할 수 있어요"}</span>` : ""}`;
   box.innerHTML = "";
-  if (from > today) { box.innerHTML = `<div class="empty">아직 지나지 않은 달이에요.</div>`; return; }
   const lg = document.createElement("div"); lg.className = "ledger";
-  const line = (t, date, r) => {
-    const b = document.createElement(mgr ? "button" : "div"); b.className = "lr" + (r ? "" : " muted"); if (mgr) b.type = "button";
-    b.innerHTML = workView === "date"
-      ? `<span class="d" style="font-family:var(--sans)">${esc(t.name)}</span><span class="c"><b>${r ? hm(r.checked_at) + " 출근" : "출근 기록 없음"}</b>${r && r.edited_by ? `<span>관리자 수정</span>` : ""}</span><span class="rn"></span>`
-      : `<span class="d">${md(date)}<small>${dow(date)}</small></span><span class="c"><b>${r ? hm(r.checked_at) + " 출근" : "출근 기록 없음"}</b>${r && r.edited_by ? `<span>관리자 수정</span>` : ""}</span><span class="rn"></span>`;
-    if (mgr) b.onclick = () => openCk(t, date, r);
-    return b;
-  };
-  if (workView === "date") {
-    for (let d = parse(last); iso(d) >= from; d.setDate(d.getDate() - 1)) {
-      const date = iso(d); const mb = document.createElement("div"); mb.className = "monthbar";
-      const n = people.filter(t => by[`${t.id}|${date}`]).length;
-      mb.textContent = `${md(date)} (${dow(date)}) · ${n}명 출근`; lg.appendChild(mb);
-      people.forEach(t => lg.appendChild(line(t, date, by[`${t.id}|${date}`])));
-    }
-  } else {
-    people.forEach(t => {
-      const mine = rows.filter(r => r.trainer_id === t.id).sort((x, y) => y.work_date.localeCompare(x.work_date));
-      const mb = document.createElement("div"); mb.className = "monthbar";
-      mb.textContent = `${t.name} 트레이너 · ${mine.length}일 출근`; lg.appendChild(mb);
-      if (!mine.length) { const e = document.createElement("div"); e.className = "lr muted"; e.innerHTML = `<span class="d"></span><span class="c"><b>이번 달 출근 기록 없음</b></span><span class="rn"></span>`; lg.appendChild(e); }
-      mine.forEach(r => lg.appendChild(line(t, r.work_date, r)));
+  board.forEach(b => {
+    const here = b.people.filter(p => p.checkin_branch === b.id).sort((x, y) => x.checked_at.localeCompare(y.checked_at));
+    const rest = b.people.filter(p => p.checkin_branch !== b.id).sort((x, y) => x.name.localeCompare(y.name, "ko"));
+    const mb = document.createElement("div"); mb.className = "monthbar";
+    mb.textContent = `${b.name} · ${b.people.length}명 중 ${here.length}명 출근`; lg.appendChild(mb);
+    if (!b.people.length) { const e = document.createElement("div"); e.className = "lr muted"; e.innerHTML = `<span class="d"></span><span class="c"><b>배정된 트레이너가 없어요</b></span><span class="rn"></span>`; lg.appendChild(e); }
+    [...here, ...rest].forEach(p => {
+      const atHere = p.checkin_branch === b.id, elsewhere = p.checkin_id && !atHere;
+      const can = p.checkin_id ? isManagerOf(p.checkin_branch) : isManagerOf(b.id);
+      const row = document.createElement(can ? "button" : "div"); row.className = "lr" + (atHere ? "" : " muted"); if (can) row.type = "button";
+      const label = atHere ? `${hm(p.checked_at)} 출근` : elsewhere ? `${esc(p.checkin_branch_name)} 출근 · ${hm(p.checked_at)}` : "출근 기록 없음";
+      row.innerHTML = `<span class="d" style="font-family:var(--sans)">${esc(p.name)}</span><span class="c"><b>${label}</b>${p.edited ? `<span>관리자 수정</span>` : ""}</span><span class="rn"></span>`;
+      if (can) row.onclick = () => openCk({ id: p.id, name: p.name }, d, p.checkin_id ? { id: p.checkin_id, checked_at: p.checked_at } : null, p.checkin_id ? p.checkin_branch : b.id);
+      lg.appendChild(row);
     });
-  }
+  });
   box.appendChild(lg);
 }
 /* 출근 기록 수정·추가 (지점 관리자·전체 관리자) */
-let ckT = null, ckDate = null, ckRow = null;
-function openCk(t, date, r) {
-  ckT = t; ckDate = date; ckRow = r || null; $("ckErr").textContent = "";
+let ckT = null, ckDate = null, ckRow = null, ckBranch = null;
+function openCk(t, date, r, branchId) {
+  ckT = t; ckDate = date; ckRow = r || null; ckBranch = branchId; $("ckErr").textContent = "";
   $("ckTitle").textContent = r ? "출근 기록 수정" : "출근 기록 추가";
-  $("ckSub").textContent = `${t.name} 트레이너 · ${md(date)} (${dow(date)}) · ${BN(curBranch)}`;
+  $("ckSub").textContent = `${t.name} 트레이너 · ${md(date)} (${dow(date)}) · ${BN(branchId)}`;
   $("ckTime").value = r ? hm(r.checked_at) : "09:00"; $("ckDel").hidden = !r; show($("ckSheet"));
 }
 $("ckForm").onsubmit = e => { e.preventDefault(); busy($("ckForm").querySelector(".primary"), async () => {
   const tm = $("ckTime").value; if (!tm) return $("ckErr").textContent = "출근 시간을 입력해주세요.";
   const at = new Date(`${ckDate}T${tm}:00+09:00`).toISOString();
   const { error } = ckRow ? await sb.from("checkins").update({ checked_at: at }).eq("id", ckRow.id)
-    : await sb.from("checkins").insert({ trainer_id: ckT.id, branch_id: curBranch, work_date: ckDate, checked_at: at });
+    : await sb.from("checkins").insert({ trainer_id: ckT.id, branch_id: ckBranch, work_date: ckDate, checked_at: at });
   if (error) return $("ckErr").textContent = /duplicate|unique/i.test(error.message) ? "그날 다른 지점에 출근 기록이 있어요." : friendly(error);
   close(); toast("저장했어요"); refresh();
 }); };
@@ -383,10 +372,9 @@ $("ckDel").onclick = () => confirmBtn($("ckDel"), "정말 삭제", () => busy($(
   close(); toast("삭제했어요"); refresh();
 }));
 $("wkBack").onclick = leaveWork;
-$("wkPrev").onclick = () => { workMonth = new Date(workMonth.getFullYear(), workMonth.getMonth() - 1, 1); renderWork(); };
-$("wkNext").onclick = () => { workMonth = new Date(workMonth.getFullYear(), workMonth.getMonth() + 1, 1); renderWork(); };
-$("wkDate").onclick = () => { workView = "date"; renderWork(); };
-$("wkTrainer").onclick = () => { workView = "trainer"; renderWork(); };
+$("wkPrev").onclick = () => { workDay = new Date(workDay); workDay.setDate(workDay.getDate() - 1); renderWork(); };
+$("wkNext").onclick = () => { workDay = new Date(workDay); workDay.setDate(workDay.getDate() + 1); renderWork(); };
+$("wkPick").onchange = e => { if (e.target.value) { workDay = parse(e.target.value); renderWork(); } };
 
 /* ---------- 출석부: 선수 목록 ---------- */
 let listFilter = null; // null | "pay" | "unc"
