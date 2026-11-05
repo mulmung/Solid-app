@@ -230,3 +230,17 @@ body{margin:0}
 .verrow .vh .hint{margin-left:auto}
 .verrow ul{margin:6px 0 0;padding-left:18px;font-size:14px;display:grid;gap:2px}
 .verrow.cur .vh b{color:var(--accent)}
+
+/* 출근 */
+.ckcard{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:12px 14px}
+.ckcard.done{border-color:transparent;background:var(--ok-bg)}
+.ckcard .ckt{display:grid;gap:2px;flex:1;min-width:0}
+.ckcard .ckt b{font-size:15px}
+.ckcard.done .ckt b{color:var(--ok)}
+.ckcard .ckt span{font-size:13px;color:var(--muted)}
+.ckbtn{border:0;background:var(--accent);color:var(--on-accent);border-radius:10px;height:40px;padding:0 16px;font-weight:700}
+.cklink{border:1px solid var(--line);background:var(--surface);border-radius:10px;height:40px;padding:0 12px;font-weight:600;font-size:13px;color:var(--muted)}
+.ckmark{margin-left:auto;font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-bg);border-radius:999px;padding:2px 8px}
+.brchip.mgr{font-size:12px}
+.brchip.mgr[aria-pressed="true"]{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.mgrchips:empty{display:none}

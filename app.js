@@ -63,7 +63,10 @@ function setBranch(id) { curBranch = id; try { localStorage.setItem("solid.branc
 const TN = id => { const t = T(id); return t ? `${t.name} 트레이너` : "트레이너 미지정"; };
 const A = id => athletes.find(a => a.id === id);
 const isAdmin = () => me && me.role === "admin";
-const canEdit = l => isAdmin() || (me && l.trainer === me.id);
+let managerBr = {};            // trainerId → Set(지점 관리자인 지점)
+const isManagerOf = b => isAdmin() || !!(me && managerBr[me.id] && managerBr[me.id].has(b));
+const managedBranches = () => branches.filter(b => b.active && isManagerOf(b.id));
+const canEdit = l => isAdmin() || (me && l.trainer === me.id) || isManagerOf(l.branch);
 
 /* ---------- 알림 ---------- */
 let toastTimer;
@@ -102,7 +105,7 @@ function mapLesson(r, rows) {
 async function loadBase() {
   const [br, tbr, abr, tr, at, pa, st, rc] = await Promise.all([
     fetchAll("branches", "id,name,active", q => q.order("id")),
-    fetchAll("trainer_branches", "trainer_id,branch_id"),
+    fetchAll("trainer_branches", "trainer_id,branch_id,is_manager"),
     fetchAll("athlete_branches", "athlete_id,branch_id"),
     fetchAll("trainers", "id,name,email,role,active,user_id", q => q.order("id")),
     fetchAll("athletes", "id,name,team,plan,price,birth_year", q => q.order("id")),
@@ -111,7 +114,8 @@ async function loadBase() {
     fetchAll("athlete_trainer_recent", "*"),
   ]);
   branches = br;
-  trainerBr = {}; tbr.forEach(r => (trainerBr[r.trainer_id] ||= new Set()).add(r.branch_id));
+  trainerBr = {}; managerBr = {};
+  tbr.forEach(r => { (trainerBr[r.trainer_id] ||= new Set()).add(r.branch_id); if (r.is_manager) (managerBr[r.trainer_id] ||= new Set()).add(r.branch_id); });
   athleteBr = {}; abr.forEach(r => (athleteBr[r.athlete_id] ||= new Set()).add(r.branch_id));
   trainers = tr.map(mapTrainer);
   athletes = at.map(mapAthlete);
@@ -122,11 +126,13 @@ async function loadBase() {
     s.charged += Number(r.charged); s.byMonth[r.month] = Number(r.charged); s.unchecked += Number(r.unchecked); s.unpaid += Number(r.unpaid_visit);
   });
   recent = {}; rc.forEach(r => recent[`${r.athlete_id}-${r.trainer_id}`] = r.last_date);
+  await loadMyCheckin(); workCache = {};
   // 보고 있던 지점 유지, 없으면 내 첫 지점
   const mine = branches.filter(b => b.active && (isAdmin() || inBranch(trainerBr, me.id, b.id)));
   let saved = null; try { saved = Number(localStorage.getItem("solid.branch")); } catch (e) {}
   if (!mine.some(b => b.id === curBranch)) setBranch((mine.find(b => b.id === saved) || mine[0] || {}).id ?? null);
   drawBranchSel();
+  if ($("meSub")) $("meSub").textContent = isAdmin() ? "전체 관리자 · 전 지점" : managedBranches().length ? `지점 관리자 · ${managedBranches().map(b => b.name).join(", ")}` : "트레이너";
 }
 function myBranches() { return branches.filter(b => b.active && (isAdmin() || inBranch(trainerBr, me.id, b.id))); }
 function drawBranchSel() {
@@ -136,7 +142,19 @@ function drawBranchSel() {
   sel.hidden = !list.length;
 }
 
+/* ---------- 출근 ---------- */
+let myCheckin = null;          // 오늘 내 출근 (어느 지점이든)
+let dayCheckins = {};          // `${지점}|${날짜}` → { trainerId: 출근 }
+const KST = { timeZone: "Asia/Seoul" };
+const hm = ts => new Date(ts).toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit", hour12: false });
+const fullTime = ts => { const d = new Date(ts); return `${d.toLocaleDateString("ko-KR", { ...KST, year: "numeric", month: "long", day: "numeric", weekday: "short" }).replace(/\((.)\)/, "($1)")} ${d.toLocaleTimeString("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" })}`; };
+async function loadMyCheckin() {
+  const { data } = await sb.from("checkins").select("*").eq("trainer_id", me.id).eq("work_date", todayIso()).maybeSingle();
+  myCheckin = data || null;
+}
 async function loadDay(d) {
+  const { data: ck } = await sb.from("checkins").select("*").eq("branch_id", curBranch).eq("work_date", d);
+  const m = {}; (ck || []).forEach(c => m[c.trainer_id] = c); dayCheckins[`${curBranch}|${d}`] = m;
   const { data, error } = await sb.from("lessons")
     .select("id,type,trainer_id,branch_id,date,start_time,team,grade,lesson_athletes(athlete_id,status,deduct,memo)")
     .eq("date", d).eq("branch_id", curBranch).order("start_time");
@@ -250,21 +268,125 @@ async function renderSched() {
   }
   const day = dayCache[key].slice().sort((a, b) => toMin(a.start) - toMin(b.start) || a.trainer - b.trainer);
   const bad = conflicts(day); const cnt = t => day.filter(l => l.type === t).length;
+  const cks = dayCheckins[key] || {};
   $("summary").innerHTML = `<span>총 ${day.length}개 수업</span>` + ["personal", "group", "team"].map(t => `<span class="chip ${t}">${LABEL[t]} ${cnt(t)}</span>`).join("");
   list.innerHTML = "";
-  if (!day.length) { list.innerHTML = `<div class="empty">이 날은 등록된 수업이 없어요.<br>아래 <b>+ 수업 추가</b>로 등록해보세요.</div>`; return; }
+  if (d === todayIso()) list.appendChild(checkinCard());
+  if (!day.length) { list.insertAdjacentHTML("beforeend", `<div class="empty">이 날은 등록된 수업이 없어요.<br>아래 <b>+ 수업 추가</b>로 등록해보세요.</div>`); return; }
   if (view === "trainer") {
     const order = [...trainers].sort((x, y) => (me && x.id === me.id ? -1 : 0) - (me && y.id === me.id ? -1 : 0));
     for (const t of order) {
       const mine = day.filter(l => l.trainer === t.id); if (!mine.length) continue;
       const s = document.createElement("section"); s.className = "section";
-      s.innerHTML = `<h2>${esc(t.name)} 트레이너${t.active ? "" : " (퇴사)"}<span class="count">${mine.length}개</span></h2>`;
+      s.innerHTML = `<h2>${esc(t.name)} 트레이너${t.active ? "" : " (퇴사)"}<span class="count">${mine.length}개</span>${cks[t.id] ? `<span class="ckmark">${hm(cks[t.id].checked_at)} 출근</span>` : ""}</h2>`;
       mine.forEach(l => s.appendChild(card(l, bad, false))); list.appendChild(s);
     }
   } else {
     const s = document.createElement("section"); s.className = "section"; day.forEach(l => s.appendChild(card(l, bad, true))); list.appendChild(s);
   }
 }
+
+function checkinCard() {
+  const box = document.createElement("div");
+  if (myCheckin) {
+    box.className = "ckcard done";
+    box.innerHTML = `<div class="ckt"><b>출근 완료</b><span>${esc(fullTime(myCheckin.checked_at))} · ${esc(BN(myCheckin.branch_id))}</span></div><button type="button" class="cklink">출근 기록</button>`;
+  } else {
+    box.className = "ckcard";
+    box.innerHTML = `<div class="ckt"><b>아직 출근 전이에요</b><span>${esc(BN(curBranch))}에 출근으로 기록돼요</span></div><button type="button" class="ckbtn">출근하기</button><button type="button" class="cklink">출근 기록</button>`;
+    const b = box.querySelector(".ckbtn");
+    b.onclick = () => confirmBtn(b, "한 번 더 누르면 출근", () => busy(b, async () => {
+      const { data, error } = await sb.rpc("check_in", { p_branch: curBranch });
+      if (error) return toast(/이미 출근/.test(error.message) ? "오늘은 이미 출근했어요" : friendly(error), true);
+      myCheckin = data; toast(`출근했어요 · ${fullTime(data.checked_at)}`); refresh();
+    }));
+  }
+  box.querySelector(".cklink").onclick = openWork;
+  return box;
+}
+
+/* ---------- 출근 기록 화면 ---------- */
+let workOpen = false, workView = "date", workMonth = null, workCache = {};
+function openWork() {
+  if (layer() !== "work") history.pushState({ layer: "work" }, "");
+  workOpen = true; const t = parse(todayIso()); workMonth = workMonth || new Date(t.getFullYear(), t.getMonth(), 1);
+  render(); window.scrollTo(0, 0);
+}
+function leaveWork() { if (layer() === "work") history.back(); else { workOpen = false; render(); } }
+function workRange() { const a = workMonth, b = new Date(a.getFullYear(), a.getMonth() + 1, 0); return [iso(a), iso(b)]; }
+async function renderWork() {
+  $("wkMonth").textContent = `${workMonth.getFullYear()}년 ${workMonth.getMonth() + 1}월`;
+  $("wkTitle").textContent = `출근 기록 · ${BN(curBranch)}`;
+  $("wkDate").setAttribute("aria-pressed", workView === "date"); $("wkTrainer").setAttribute("aria-pressed", workView === "trainer");
+  const [from, to] = workRange(); const key = `${curBranch}|${from}`;
+  const box = $("list"); $("summary").innerHTML = "";
+  if (!workCache[key]) {
+    box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+    try { workCache[key] = await fetchAll("checkins", "*", q => q.eq("branch_id", curBranch).gte("work_date", from).lte("work_date", to).order("work_date")); }
+    catch (e) { box.innerHTML = `<div class="empty">${esc(friendly(e))}</div>`; return; }
+    if (!workOpen || `${curBranch}|${workRange()[0]}` !== key) return;
+  }
+  const rows = workCache[key]; const mgr = isManagerOf(curBranch); const today = todayIso();
+  const people = trainers.filter(t => (t.active && inBranch(trainerBr, t.id, curBranch)) || rows.some(r => r.trainer_id === t.id))
+    .sort((x, y) => x.name.localeCompare(y.name, "ko"));
+  const by = {}; rows.forEach(r => by[`${r.trainer_id}|${r.work_date}`] = r);
+  const last = to < today ? to : today;
+  $("summary").innerHTML = `<span>출근 ${rows.length}건</span>${mgr ? `<span class="hint">기록을 눌러 수정하거나, 빈 날을 눌러 추가할 수 있어요</span>` : ""}`;
+  box.innerHTML = "";
+  if (from > today) { box.innerHTML = `<div class="empty">아직 지나지 않은 달이에요.</div>`; return; }
+  const lg = document.createElement("div"); lg.className = "ledger";
+  const line = (t, date, r) => {
+    const b = document.createElement(mgr ? "button" : "div"); b.className = "lr" + (r ? "" : " muted"); if (mgr) b.type = "button";
+    b.innerHTML = workView === "date"
+      ? `<span class="d" style="font-family:var(--sans)">${esc(t.name)}</span><span class="c"><b>${r ? hm(r.checked_at) + " 출근" : "출근 기록 없음"}</b>${r && r.edited_by ? `<span>관리자 수정</span>` : ""}</span><span class="rn"></span>`
+      : `<span class="d">${md(date)}<small>${dow(date)}</small></span><span class="c"><b>${r ? hm(r.checked_at) + " 출근" : "출근 기록 없음"}</b>${r && r.edited_by ? `<span>관리자 수정</span>` : ""}</span><span class="rn"></span>`;
+    if (mgr) b.onclick = () => openCk(t, date, r);
+    return b;
+  };
+  if (workView === "date") {
+    for (let d = parse(last); iso(d) >= from; d.setDate(d.getDate() - 1)) {
+      const date = iso(d); const mb = document.createElement("div"); mb.className = "monthbar";
+      const n = people.filter(t => by[`${t.id}|${date}`]).length;
+      mb.textContent = `${md(date)} (${dow(date)}) · ${n}명 출근`; lg.appendChild(mb);
+      people.forEach(t => lg.appendChild(line(t, date, by[`${t.id}|${date}`])));
+    }
+  } else {
+    people.forEach(t => {
+      const mine = rows.filter(r => r.trainer_id === t.id).sort((x, y) => y.work_date.localeCompare(x.work_date));
+      const mb = document.createElement("div"); mb.className = "monthbar";
+      mb.textContent = `${t.name} 트레이너 · ${mine.length}일 출근`; lg.appendChild(mb);
+      if (!mine.length) { const e = document.createElement("div"); e.className = "lr muted"; e.innerHTML = `<span class="d"></span><span class="c"><b>이번 달 출근 기록 없음</b></span><span class="rn"></span>`; lg.appendChild(e); }
+      mine.forEach(r => lg.appendChild(line(t, r.work_date, r)));
+    });
+  }
+  box.appendChild(lg);
+}
+/* 출근 기록 수정·추가 (지점 관리자·전체 관리자) */
+let ckT = null, ckDate = null, ckRow = null;
+function openCk(t, date, r) {
+  ckT = t; ckDate = date; ckRow = r || null; $("ckErr").textContent = "";
+  $("ckTitle").textContent = r ? "출근 기록 수정" : "출근 기록 추가";
+  $("ckSub").textContent = `${t.name} 트레이너 · ${md(date)} (${dow(date)}) · ${BN(curBranch)}`;
+  $("ckTime").value = r ? hm(r.checked_at) : "09:00"; $("ckDel").hidden = !r; show($("ckSheet"));
+}
+$("ckForm").onsubmit = e => { e.preventDefault(); busy($("ckForm").querySelector(".primary"), async () => {
+  const tm = $("ckTime").value; if (!tm) return $("ckErr").textContent = "출근 시간을 입력해주세요.";
+  const at = new Date(`${ckDate}T${tm}:00+09:00`).toISOString();
+  const { error } = ckRow ? await sb.from("checkins").update({ checked_at: at }).eq("id", ckRow.id)
+    : await sb.from("checkins").insert({ trainer_id: ckT.id, branch_id: curBranch, work_date: ckDate, checked_at: at });
+  if (error) return $("ckErr").textContent = /duplicate|unique/i.test(error.message) ? "그날 다른 지점에 출근 기록이 있어요." : friendly(error);
+  close(); toast("저장했어요"); refresh();
+}); };
+$("ckDel").onclick = () => confirmBtn($("ckDel"), "정말 삭제", () => busy($("ckDel"), async () => {
+  const { error } = await sb.from("checkins").delete().eq("id", ckRow.id);
+  if (error) return $("ckErr").textContent = friendly(error);
+  close(); toast("삭제했어요"); refresh();
+}));
+$("wkBack").onclick = leaveWork;
+$("wkPrev").onclick = () => { workMonth = new Date(workMonth.getFullYear(), workMonth.getMonth() - 1, 1); renderWork(); };
+$("wkNext").onclick = () => { workMonth = new Date(workMonth.getFullYear(), workMonth.getMonth() + 1, 1); renderWork(); };
+$("wkDate").onclick = () => { workView = "date"; renderWork(); };
+$("wkTrainer").onclick = () => { workView = "trainer"; renderWork(); };
 
 /* ---------- 출석부: 선수 목록 ---------- */
 let listFilter = null; // null | "pay" | "unc"
@@ -358,9 +480,11 @@ function renderLedger() {
 /* ---------- 화면 전환 ---------- */
 function render() {
   $("tabS").setAttribute("aria-pressed", tab === "sched"); $("tabR").setAttribute("aria-pressed", tab === "roll");
-  $("hSched").hidden = tab !== "sched"; $("hList").hidden = !(tab === "roll" && !ledgerId); $("hLedger").hidden = !(tab === "roll" && ledgerId);
+  $("hWork").hidden = !workOpen;
+  $("hSched").hidden = tab !== "sched" || workOpen; $("hList").hidden = !(tab === "roll" && !ledgerId) || workOpen; $("hLedger").hidden = !(tab === "roll" && ledgerId) || workOpen;
   $("fab").hidden = tab === "roll" && !!ledgerId; $("fab").textContent = tab === "sched" ? "+ 수업 추가" : "+ 선수 등록";
-  $("mgrBtn").hidden = !isAdmin(); $("expBtn").hidden = !isAdmin();
+  $("mgrBtn").hidden = !isAdmin(); $("expBtn").hidden = !managedBranches().length;
+  if (workOpen) { $("fab").hidden = true; renderWork(); return; }
   if (tab === "sched") renderSched(); else if (ledgerId) renderLedger(); else renderList();
 }
 
@@ -388,6 +512,7 @@ function leaveLedger() { if (layer() === "ledger") history.back(); else { ledger
 window.addEventListener("popstate", () => {
   if (ignorePop) { ignorePop = false; return; }
   if (openSheetEl) { hideSheet(); return; }
+  if (workOpen && layer() !== "work") { workOpen = false; render(); return; }
   if (ledgerId && layer() !== "ledger") { ledgerId = null; render(); }
 });
 $("scrim").onclick = () => close(); document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => close());
@@ -531,9 +656,10 @@ $("pForm").onsubmit = e => { e.preventDefault(); busy($("pForm").querySelector("
 /* ---------- 수업 등록·수정 ---------- */
 let editing = null, fType = "personal", picked = [];
 function fillTrainers(sel) {
-  const list = isAdmin() ? trainers.filter(t => (t.active && inBranch(trainerBr, t.id, curBranch)) || t.id === sel) : trainers.filter(t => t.id === me.id);
+  const b = editing ? editing.branch : curBranch, pick = isManagerOf(b);
+  const list = pick ? trainers.filter(t => (t.active && inBranch(trainerBr, t.id, b)) || t.id === sel) : trainers.filter(t => t.id === me.id || t.id === sel);
   $("fTrainer").innerHTML = list.map(t => `<option value="${t.id}">${esc(t.name)} 트레이너${t.active ? "" : " (퇴사)"}</option>`).join("");
-  $("fTrainer").value = sel || (list.some(t => t.id === me.id) ? me.id : (list[0] || {}).id); $("fTrainer").disabled = !isAdmin();
+  $("fTrainer").value = sel || (list.some(t => t.id === me.id) ? me.id : (list[0] || {}).id); $("fTrainer").disabled = !pick;
 }
 function setType(t) {
   fType = t; press("#types button", "t", t);
@@ -617,7 +743,7 @@ function drawTrainers() {
   trainers.forEach(t => {
     const r = document.createElement("div"); r.className = "trow" + (t.active ? "" : " off");
     const self = me && t.id === me.id;
-    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "관리자(전 지점)" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px"><button type="button" class="trole">${t.role === "admin" ? "관리자 해제" : "관리자 지정"}</button>${t.linked ? `<button type="button" class="tpw">비밀번호 초기화</button>` : ""}<button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
+    r.innerHTML = `<div style="display:grid;gap:4px;min-width:0"><input aria-label="트레이너 이름">${t.linked ? "" : `<input class="temail" type="email" inputmode="email" aria-label="가입할 이메일">`}<span class="hint">${t.linked ? esc(t.email) + " · " : ""}${t.role === "admin" ? "전체 관리자" : managerBr[t.id] && managerBr[t.id].size ? "지점 관리자" : "트레이너"} · ${!t.active ? "퇴사" : t.linked ? "가입 완료" : "가입 전"}</span>${t.role === "admin" ? "" : `<div class="brchips"></div><div class="brchips mgrchips"></div>`}</div>${self ? "" : `<div style="display:grid;gap:6px">${t.role === "admin" ? `<button type="button" class="trole">전체 관리자 해제</button>` : ""}${t.linked ? `<button type="button" class="tpw">비밀번호 초기화</button>` : ""}<button type="button" class="tact">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="tdel" style="color:var(--danger)">삭제</button></div>`}`;
     const chips = r.querySelector(".brchips");
     if (chips) branches.filter(b => b.active).forEach(br => {
       const c = document.createElement("button"); c.type = "button"; c.className = "brchip"; c.textContent = br.name;
@@ -627,9 +753,22 @@ function drawTrainers() {
         const { error } = on ? await sb.from("trainer_branches").delete().eq("trainer_id", t.id).eq("branch_id", br.id)
                              : await sb.from("trainer_branches").insert({ trainer_id: t.id, branch_id: br.id });
         if (error) return $("trErr").textContent = friendly(error);
-        (trainerBr[t.id] ||= new Set())[on ? "delete" : "add"](br.id); drawTrainers(); dayCache = {}; render();
+        (trainerBr[t.id] ||= new Set())[on ? "delete" : "add"](br.id); if (on && managerBr[t.id]) managerBr[t.id].delete(br.id); drawTrainers(); dayCache = {}; render();
       });
       chips.appendChild(c);
+    });
+    const mchips = r.querySelector(".mgrchips");
+    if (mchips) branches.filter(b => b.active && inBranch(trainerBr, t.id, b.id)).forEach(br => {
+      const on = !!(managerBr[t.id] && managerBr[t.id].has(br.id));
+      const c = document.createElement("button"); c.type = "button"; c.className = "brchip mgr"; c.textContent = `${br.name} 지점 관리자`;
+      c.setAttribute("aria-pressed", on);
+      c.onclick = () => busy(c, async () => {
+        const { error } = await sb.from("trainer_branches").update({ is_manager: !on }).eq("trainer_id", t.id).eq("branch_id", br.id);
+        if (error) return $("trErr").textContent = friendly(error);
+        (managerBr[t.id] ||= new Set())[on ? "delete" : "add"](br.id); drawTrainers();
+        toast(on ? `${t.name} 님의 ${br.name} 지점 관리자를 해제했어요` : `${t.name} 님을 ${br.name} 지점 관리자로 지정했어요`);
+      });
+      mchips.appendChild(c);
     });
     const inp = r.querySelector("input"); inp.value = t.name;
     inp.onchange = async () => {
@@ -650,8 +789,8 @@ function drawTrainers() {
       };
     }
     const rb = r.querySelector(".trole");
-    if (rb) rb.onclick = () => confirmBtn(rb, t.role === "admin" ? "정말 해제" : "정말 지정", () => busy(rb, async () => {
-      const role = t.role === "admin" ? "trainer" : "admin";
+    if (rb) rb.onclick = () => confirmBtn(rb, "정말 해제", () => busy(rb, async () => {
+      const role = "trainer";
       const { error } = await sb.from("trainers").update({ role }).eq("id", t.id);
       if (error) return $("trErr").textContent = friendly(error);
       t.role = role; $("trErr").textContent = ""; drawTrainers();
@@ -784,8 +923,8 @@ $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
 document.querySelectorAll('input[type="date"], input[type="month"], input[type="time"]').forEach(inp => inp.addEventListener("click", () => { try { inp.showPicker(); } catch (e) {} }));
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
 $("vTrainer").onclick = () => { view = "trainer"; render(); }; $("vTime").onclick = () => { view = "time"; render(); };
-$("tabS").onclick = () => { if (ledgerId) leaveLedger(); tab = "sched"; render(); };
-$("tabR").onclick = () => { if (ledgerId) leaveLedger(); tab = "roll"; render(); };
+$("tabS").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
+$("tabR").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
 $("backBtn").onclick = leaveLedger;
 $("aSearch").oninput = renderList;
 $("branchSel").onchange = e => { setBranch(Number(e.target.value)); if (ledgerId) leaveLedger(); render(); };
@@ -898,9 +1037,10 @@ function expRange(r) {
 document.querySelectorAll("#expPresets button").forEach(b => b.onclick = () => expRange(b.dataset.r));
 $("expBranch").onchange = e => { expScope = e.target.value === "all" ? "all" : Number(e.target.value); };
 $("expBtn").onclick = () => {
-  expRange("this"); expScope = curBranch;
-  $("expBranch").innerHTML = `<option value="all">전 지점</option>` + myBranches().map(b => `<option value="${b.id}">${esc(b.name)}${b.id === curBranch ? " (지금 지점)" : ""}</option>`).join("");
-  $("expBranch").value = String(curBranch);
+  const list = managedBranches(); if (!list.length) return;
+  expRange("this"); expScope = list.some(b => b.id === curBranch) ? curBranch : list[0].id;
+  $("expBranch").innerHTML = (isAdmin() ? `<option value="all">전 지점</option>` : "") + list.map(b => `<option value="${b.id}">${esc(b.name)}${b.id === curBranch ? " (지금 지점)" : ""}</option>`).join("");
+  $("expBranch").value = String(expScope);
   $("expErr").textContent = ""; show($("expSheet"));
 };
 let xlsxReady = null;
@@ -919,12 +1059,15 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
   $("expErr").textContent = ""; $("expGo").textContent = "만드는 중…";
   try {
     await loadXlsx();
+    if (expScope === "all" && !isAdmin()) throw new Error("전 지점 내보내기는 전체 관리자만 할 수 있어요");
+    if (expScope !== "all" && !isManagerOf(expScope)) throw new Error("관리하는 지점만 내보낼 수 있어요");
     const one = expScope !== "all";
     const scope = q => one ? q.eq("branch_id", expScope) : q;
-    const [ls, ps] = await Promise.all([
+    const [ls, ps, cks] = await Promise.all([
       fetchAll("lessons", "id,type,trainer_id,branch_id,date,start_time,team,grade,lesson_athletes(athlete_id,status,deduct,memo)",
         q => scope(q.gte("date", from).lte("date", to)).order("date").order("start_time")),
       fetchAll("payments", "*", q => scope(q.gte("date", from).lte("date", to)).order("date")),
+      fetchAll("checkins", "*", q => scope(q.gte("work_date", from).lte("work_date", to)).order("work_date")),
     ]);
     const lessonRows = [];
     let cP = 0, cPv = 0, cS = 0, cSd = 0, cPr = 0, cU = 0;
@@ -957,6 +1100,8 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     add("요약", XLSX.utils.aoa_to_sheet(sum), [22, 24]);
     add("수업·출석", XLSX.utils.json_to_sheet(lessonRows.length ? lessonRows : [{ 안내: "이 기간 수업이 없어요" }]), [11, 5, 10, 7, 7, 6, 14, 18, 9, 6, 24]);
     add("결제", XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ 안내: "이 기간 결제가 없어요" }]), [11, 10, 10, 9, 6, 9, 14, 9, 12, 9, 24]);
+    const ckRows = cks.map(c => ({ 날짜: c.work_date, 요일: dow(c.work_date), 지점: BN(c.branch_id), 트레이너: TN(c.trainer_id), 출근시간: hm(c.checked_at), 관리자수정: c.edited_by ? "예" : "" }));
+    add("출근 기록", XLSX.utils.json_to_sheet(ckRows.length ? ckRows : [{ 안내: "이 기간 출근 기록이 없어요" }]), [11, 5, 10, 14, 9, 9]);
     add("선수 목록", XLSX.utils.json_to_sheet(athRows.length ? athRows : [{ 안내: "선수가 없어요" }]), [10, 16, 6, 8, 16, 10, 10, 14]);
     const tag = one ? BN(expScope) : "전지점";
     XLSX.writeFile(wb, `솔리드_${tag}_${from}_${to}.xlsx`);
@@ -985,7 +1130,7 @@ async function enter(session) {
   }
   me = mapTrainer(data);
   $("meLabel").textContent = `${me.name} 트레이너`;
-  $("meSub").textContent = isAdmin() ? "관리자 · 전 지점" : "트레이너";
+  $("meSub").textContent = "트레이너";
   $("authView").hidden = true; $("appView").hidden = false;
   $("list").innerHTML = `<div class="loading">불러오는 중…</div>`;
   try { await loadBase(); } catch (e) { toast(friendly(e), true); }
