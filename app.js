@@ -812,7 +812,7 @@ function stopLive() { if (liveCh) { sb.removeChannel(liveCh); liveCh = null; } }
 /* ---------- 자동 업데이트 ----------
  * 앱 파일(index.html, app.js, style.css)의 버전 표시(ETag)를 처음 열 때 기억해두고,
  * 앱으로 돌아올 때와 5분마다 바뀌었는지 확인. 바뀌었으면 입력 창이 닫혀 있을 때 새로고침. */
-const APP_FILES = ["/", "/app.js", "/style.css"];
+const APP_FILES = ["/", "/app.js", "/style.css", "/changelog.js"];
 let baseTags = null, updatePending = false;
 async function fileTags() {
   const tags = await Promise.all(APP_FILES.map(async f => {
@@ -869,6 +869,17 @@ $("authForm").onsubmit = e => { e.preventDefault(); busy($("authBtn"), async () 
   }
 }); };
 $("logoutBtn").onclick = async () => { await sb.auth.signOut(); };
+/* 버전·업데이트 내역 */
+const LOG = window.SOLID_CHANGELOG || [];
+const APP_VERSION = (LOG[0] || {}).v || "";
+$("verNum").textContent = APP_VERSION;
+$("verBtn").onclick = () => {
+  $("verList").innerHTML = LOG.map((r, i) => {
+    const [y, m, d] = r.d.split("-").map(Number);
+    return `<div class="verrow${i === 0 ? " cur" : ""}"><div class="vh"><b>${esc(r.v)}</b>${i === 0 ? `<span class="chip ok">현재</span>` : ""}<span class="hint">${y}.${m}.${d}</span></div><ul>${r.items.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>`;
+  }).join("");
+  show($("verSheet"));
+};
 /* 톱니바퀴 설정 메뉴 */
 function setGear(open) { $("gearMenu").hidden = !open; $("gearBtn").setAttribute("aria-expanded", open); }
 $("gearBtn").onclick = e => { e.stopPropagation(); setGear($("gearMenu").hidden); };

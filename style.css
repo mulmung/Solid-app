@@ -220,3 +220,13 @@ body{margin:0}
 .gmenu button svg{width:18px;height:18px;color:var(--muted);flex:none}
 .gmenu .out,.gmenu .out svg{color:var(--danger)}
 @media (max-width:480px){.hdr .logo{display:none}.ib{width:40px;height:40px}.ib svg{width:20px;height:20px}.icons{gap:6px}}
+.gmenu .ver{font-size:12px;color:var(--muted);border-top:1px solid var(--line);border-radius:0;margin-top:4px;padding-top:10px}
+.gmenu .ver span{font-family:var(--mono)}
+.verlist{display:grid;gap:4px}
+.verrow{padding-block:10px;border-top:1px solid var(--line)}
+.verrow:first-child{border-top:0}
+.verrow .vh{display:flex;align-items:center;gap:8px}
+.verrow .vh b{font-family:var(--mono);font-size:15px}
+.verrow .vh .hint{margin-left:auto}
+.verrow ul{margin:6px 0 0;padding-left:18px;font-size:14px;display:grid;gap:2px}
+.verrow.cur .vh b{color:var(--accent)}
