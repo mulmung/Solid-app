@@ -319,7 +319,7 @@ function renderLedger() {
   $("editAth").onclick = () => openAthForm(a); $("addPay").onclick = () => openPay(a);
 
   const rows = [...ls.map(l => ({ t: "l", date: l.date, k: toMin(l.start), l })), ...paysOf(a).map(p => ({ t: "p", date: p.date, k: -1, p }))]
-    .sort((x, y) => x.date.localeCompare(y.date) || x.k - y.k);
+    .sort((x, y) => y.date.localeCompare(x.date) || y.k - x.k); // 최신 순
   const lg = document.createElement("div"); lg.className = "ledger";
   lg.innerHTML = `<div class="lh"><span>날짜</span><span>내용</span><span>회차</span></div>`;
   if (!rows.length) lg.innerHTML += `<div class="monthbar" style="text-align:center;padding:20px">아직 기록이 없어요</div>`;
