@@ -244,3 +244,6 @@ body{margin:0}
 .brchip.mgr{font-size:12px}
 .brchip.mgr[aria-pressed="true"]{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
 .mgrchips:empty{display:none}
+.back .backib{width:40px;height:40px;border:0;padding:0;flex:none}
+.back .backib svg{width:20px;height:20px}
+.back{align-items:center}
