@@ -247,3 +247,4 @@ body{margin:0}
 .back .backib{width:40px;height:40px;border:0;padding:0;flex:none}
 .back .backib svg{width:20px;height:20px}
 .back{align-items:center}
+#hSched .seg{grid-template-columns:repeat(3,1fr)}

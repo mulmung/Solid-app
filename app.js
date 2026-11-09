@@ -53,6 +53,8 @@ let dayCache = {};             // 날짜 → 수업 목록
 let ledgerLessons = null;      // 열린 선수의 전체 수업
 let cur = parse(todayIso());
 let tab = "sched", view = "trainer", ledgerId = null;
+try { const v = localStorage.getItem("solid.view"); if (["trainer", "time", "mine"].includes(v)) view = v; } catch (e) {}
+function setView(v) { view = v; try { localStorage.setItem("solid.view", v); } catch (e) {} render(); }
 
 const T = id => trainers.find(t => t.id === id);
 const B = id => branches.find(b => b.id === id);
@@ -257,7 +259,7 @@ async function renderSched() {
   const d = iso(cur);
   $("dateMain").textContent = `${cur.getMonth() + 1}월 ${cur.getDate()}일 (${days[cur.getDay()]})`;
   $("dateSub").textContent = d === todayIso() ? "오늘" : `${cur.getFullYear()}년`; $("datePick").value = d;
-  $("vTrainer").setAttribute("aria-pressed", view === "trainer"); $("vTime").setAttribute("aria-pressed", view === "time");
+  $("vTrainer").setAttribute("aria-pressed", view === "trainer"); $("vTime").setAttribute("aria-pressed", view === "time"); $("vMine").setAttribute("aria-pressed", view === "mine");
   const list = $("list");
   if (!curBranch) { $("summary").innerHTML = ""; list.innerHTML = `<div class="empty">배정된 지점이 없어요.<br>관리자에게 지점 배정을 요청하세요.</div>`; return; }
   const key = `${curBranch}|${d}`;
@@ -266,13 +268,15 @@ async function renderSched() {
     try { await loadDay(d); } catch (e) { list.innerHTML = `<div class="empty">${esc(friendly(e))}</div>`; return; }
     if (tab !== "sched" || iso(cur) !== d || `${curBranch}|${d}` !== key) return; // 그사이 화면이 바뀜
   }
-  const day = dayCache[key].slice().sort((a, b) => toMin(a.start) - toMin(b.start) || a.trainer - b.trainer);
-  const bad = conflicts(day); const cnt = t => day.filter(l => l.type === t).length;
+  const all = dayCache[key].slice().sort((a, b) => toMin(a.start) - toMin(b.start) || a.trainer - b.trainer);
+  const bad = conflicts(all);
+  const day = view === "mine" ? all.filter(l => me && l.trainer === me.id) : all;
+  const cnt = t => day.filter(l => l.type === t).length;
   const cks = dayCheckins[key] || {};
-  $("summary").innerHTML = `<span>총 ${day.length}개 수업</span>` + ["personal", "group", "team"].map(t => `<span class="chip ${t}">${LABEL[t]} ${cnt(t)}</span>`).join("");
+  $("summary").innerHTML = `<span>${view === "mine" ? "내 수업" : "총"} ${day.length}개${view === "mine" ? "" : " 수업"}</span>` + ["personal", "group", "team"].map(t => `<span class="chip ${t}">${LABEL[t]} ${cnt(t)}</span>`).join("");
   list.innerHTML = "";
   if (d === todayIso()) list.appendChild(checkinCard());
-  if (!day.length) { list.insertAdjacentHTML("beforeend", `<div class="empty">이 날은 등록된 수업이 없어요.<br>아래 <b>+ 수업 추가</b>로 등록해보세요.</div>`); return; }
+  if (!day.length) { list.insertAdjacentHTML("beforeend", `<div class="empty">${view === "mine" ? (all.length ? `이 날은 내 수업이 없어요.<br>지점 전체 ${all.length}개 수업은 트레이너별이나 시간순에서 볼 수 있어요.` : "이 날은 내 수업이 없어요.") : "이 날은 등록된 수업이 없어요."}<br>아래 <b>+ 수업 추가</b>로 등록해보세요.</div>`); return; }
   if (view === "trainer") {
     const order = [...trainers].sort((x, y) => (me && x.id === me.id ? -1 : 0) - (me && y.id === me.id ? -1 : 0));
     for (const t of order) {
@@ -282,7 +286,7 @@ async function renderSched() {
       mine.forEach(l => s.appendChild(card(l, bad, false))); list.appendChild(s);
     }
   } else {
-    const s = document.createElement("section"); s.className = "section"; day.forEach(l => s.appendChild(card(l, bad, true))); list.appendChild(s);
+    const s = document.createElement("section"); s.className = "section"; day.forEach(l => s.appendChild(card(l, bad, view !== "mine"))); list.appendChild(s);
   }
 }
 
@@ -910,7 +914,7 @@ $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
 // 노트북 브라우저: 날짜·월 칸 어디를 눌러도 달력이 열리게
 document.querySelectorAll('input[type="date"], input[type="month"], input[type="time"]').forEach(inp => inp.addEventListener("click", () => { try { inp.showPicker(); } catch (e) {} }));
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
-$("vTrainer").onclick = () => { view = "trainer"; render(); }; $("vTime").onclick = () => { view = "time"; render(); };
+$("vTrainer").onclick = () => setView("trainer"); $("vTime").onclick = () => setView("time"); $("vMine").onclick = () => setView("mine");
 $("tabS").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
 $("tabR").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
 $("backBtn").onclick = leaveLedger;
