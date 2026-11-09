@@ -117,7 +117,9 @@
     </div>
     <div id="boxTeam" hidden style="display:grid;gap:16px">
       <div class="field"><label for="fTeam">학교 또는 팀</label><input id="fTeam" placeholder="예: 한빛중 축구부"></div>
-      <div class="field"><label for="fGrade">학년</label><input id="fGrade" placeholder="예: 2학년"></div>
+      <div class="field"><span class="lbl">학년 (여러 개 선택 가능)</span>
+        <div class="opts gopts" id="fGrades"><button type="button" data-g="1">1학년</button><button type="button" data-g="2">2학년</button><button type="button" data-g="3">3학년</button><button type="button" data-g="etc">기타</button></div>
+        <input id="fGrade" placeholder="예: 4학년, U15, 성인반" hidden></div>
     </div>
     <p class="err" id="lErr" role="alert"></p>
     <div class="actions">

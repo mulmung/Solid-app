@@ -689,11 +689,35 @@ $("fFind").oninput = () => drawResults(false);
 $("fTrainer").onchange = () => drawResults(fType === "personal" && picked.length === 1);
 document.querySelectorAll("#types button").forEach(b => b.onclick = () => setType(b.dataset.t));
 $("fStart").oninput = updEnd;
+/* 학년: 1~3학년 버튼(여러 개) + 기타 직접 입력. 저장 형태 "1학년", "1·2학년", "1·2학년 U15" */
+let grades = new Set(), gradeEtc = false;
+function drawGrades() {
+  document.querySelectorAll("#fGrades button").forEach(b => b.setAttribute("aria-pressed", b.dataset.g === "etc" ? gradeEtc : grades.has(b.dataset.g)));
+  $("fGrade").hidden = !gradeEtc;
+}
+function setGrades(text) {
+  grades = new Set(); gradeEtc = false; $("fGrade").value = "";
+  let t = String(text || "").trim();
+  const m = t.match(/^([1-3](?:\s*[,·.\/]\s*[1-3])*)\s*학년\s*(.*)$/);
+  if (m) { m[1].split(/[,·.\/]/).forEach(x => grades.add(x.trim())); t = m[2].trim(); }
+  if (t) { gradeEtc = true; $("fGrade").value = t; }
+  drawGrades();
+}
+function gradeText() {
+  const nums = ["1", "2", "3"].filter(g => grades.has(g));
+  const etc = $("fGrade").value.trim();
+  if (gradeEtc && !etc) return null;
+  return [nums.length ? `${nums.join("·")}학년` : "", gradeEtc ? etc : ""].filter(Boolean).join(" ");
+}
+document.querySelectorAll("#fGrades button").forEach(b => b.onclick = () => {
+  if (b.dataset.g === "etc") { gradeEtc = !gradeEtc; drawGrades(); if (gradeEtc) $("fGrade").focus(); }
+  else { grades.has(b.dataset.g) ? grades.delete(b.dataset.g) : grades.add(b.dataset.g); drawGrades(); }
+});
 function openLesson(l) {
   editing = l || null; $("lTitle").textContent = l ? "수업 수정" : "수업 추가"; $("lDel").hidden = !l; $("lErr").textContent = "";
   fillTrainers(l ? l.trainer : null); $("fDate").value = l ? l.date : iso(cur); $("fStart").value = l ? l.start : "";
   picked = l ? [...l.ids] : []; $("fFind").value = "";
-  $("fTeam").value = l && l.type === "team" ? l.team : ""; $("fGrade").value = l && l.type === "team" ? l.grade : "";
+  $("fTeam").value = l && l.type === "team" ? l.team : ""; setGrades(l && l.type === "team" ? l.grade : "");
   setType(l ? l.type : "personal"); show($("lessonSheet"));
 }
 $("lDel").onclick = () => confirmBtn($("lDel"), "정말 삭제", () => busy($("lDel"), async () => {
@@ -707,7 +731,7 @@ $("lForm").onsubmit = e => { e.preventDefault(); busy($("lForm").querySelector("
   if (!row.date || !row.start_time) return $("lErr").textContent = "날짜와 시작 시간을 입력해주세요.";
   if (fType === "personal" && picked.length !== 1) return $("lErr").textContent = "선수를 1명 선택해주세요.";
   if (fType === "group" && picked.length < 2) return $("lErr").textContent = "그룹 수업은 선수를 2명 이상 선택해주세요.";
-  if (fType === "team") { row.team = $("fTeam").value.trim(); row.grade = $("fGrade").value.trim(); if (!row.team || !row.grade) return $("lErr").textContent = "학교·팀과 학년을 입력해주세요."; }
+  if (fType === "team") { row.team = $("fTeam").value.trim(); row.grade = gradeText(); if (row.grade === null) return $("lErr").textContent = "기타 학년 내용을 입력해주세요."; if (!row.team || !row.grade) return $("lErr").textContent = !row.team ? "학교 또는 팀을 입력해주세요." : "학년을 선택해주세요."; }
   const ids = fType === "team" ? [] : [...picked];
   let lid;
   if (editing) {

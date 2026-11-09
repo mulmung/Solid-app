@@ -248,3 +248,5 @@ body{margin:0}
 .back .backib svg{width:20px;height:20px}
 .back{align-items:center}
 #hSched .seg{grid-template-columns:repeat(3,1fr)}
+.opts.gopts{grid-template-columns:repeat(4,1fr)}
+.opts.gopts button{padding:10px 4px}
