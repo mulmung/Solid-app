@@ -495,18 +495,29 @@ function renderLedger() {
 }
 
 /* ---------- 고정표 ---------- */
-let templates = [], tplOpen = false, tplWd = 1, tplMode = false;
+let templates = [], tplOpen = false, tplWd = 1, tplMode = false, tplTrainer = null;
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const WD_ORDER = [1, 2, 3, 4, 5, 6, 0];
-const tplHere = wd => templates.filter(t => t.branch === curBranch && t.wd === wd).sort((a, b) => toMin(a.start) - toMin(b.start) || a.trainer - b.trainer);
+const tplOf = (wd, tid) => templates.filter(t => t.branch === curBranch && t.wd === wd && t.trainer === tid).sort((a, b) => toMin(a.start) - toMin(b.start));
+const tplHere = wd => tplOf(wd, tplTrainer);
+const myTpl = wd => tplOf(wd, me.id);
 const tplWho = t => t.type === "team" ? `${t.team} · ${t.grade}` : t.ids.map(id => (A(id) || {}).name).filter(Boolean).join(", ") || "(선수 없음)";
 function openTpl() {
   if (layer() !== "tpl") history.pushState({ layer: "tpl" }, "");
-  tplOpen = true; tplWd = cur.getDay(); render(); window.scrollTo(0, 0);
+  tplOpen = true; tplWd = cur.getDay(); tplTrainer = me.id; render(); window.scrollTo(0, 0);
 }
 function leaveTpl() { if (layer() === "tpl") history.back(); else { tplOpen = false; render(); } }
 function renderTpl() {
-  $("tpTitle").textContent = `고정표 · ${BN(curBranch)}`;
+  const mgr = isManagerOf(curBranch);
+  if (!mgr) tplTrainer = me.id;
+  $("tpTitle").textContent = `${tplTrainer === me.id ? "내 고정표" : `${TN(tplTrainer)} 고정표`} · ${BN(curBranch)}`;
+  const who = $("tpWho"); who.hidden = !mgr;
+  if (mgr) {
+    const others = trainers.filter(t => t.id !== me.id && t.active && inBranch(trainerBr, t.id, curBranch)).sort((x, y) => x.name.localeCompare(y.name, "ko"));
+    who.innerHTML = `<option value="${me.id}">나 (${esc(me.name)})</option>` + others.map(t => `<option value="${t.id}">${esc(t.name)} 트레이너</option>`).join("");
+    if (![me.id, ...others.map(t => t.id)].includes(tplTrainer)) tplTrainer = me.id;
+    who.value = String(tplTrainer);
+  }
   const days = $("tpDays"); days.innerHTML = "";
   WD_ORDER.forEach(w => {
     const n = tplHere(w).length; const b = document.createElement("button"); b.type = "button";
@@ -530,6 +541,7 @@ function renderTpl() {
   box.appendChild(sec);
 }
 $("tplBtn").onclick = openTpl;
+$("tpWho").onchange = e => { tplTrainer = Number(e.target.value); renderTpl(); };
 $("tpBack").onclick = leaveTpl;
 
 /* 스케줄: 고정 수업 불러오기 */
@@ -538,18 +550,18 @@ const tplExists = (t, day) => day.some(l => l.trainer === t.trainer && l.start =
   (t.type === "team" ? l.team === t.team && l.grade === t.grade : sameSet(l.ids, t.ids.filter(id => A(id) && !A(id).archived))));
 function loadBtn(d, all) {
   const wd = parse(d).getDay();
-  const mine = tplHere(wd).filter(t => canEdit({ trainer: t.trainer, branch: t.branch }));
+  const mine = myTpl(wd);
   if (!mine.length) return null;
   const left = mine.filter(t => !tplExists(t, all));
   const b = document.createElement("button"); b.type = "button"; b.className = "loadbtn";
   if (!left.length) { b.textContent = "고정 수업 모두 불러옴"; b.disabled = true; }
-  else { b.textContent = `${WD[wd]}요일 고정 수업 불러오기 (${left.length}개)`; b.onclick = () => openLoad(d, mine, all); }
+  else { b.textContent = `${WD[wd]}요일 내 고정 수업 불러오기 (${left.length}개)`; b.onclick = () => openLoad(d, mine, all); }
   return b;
 }
 let loadItems = [], loadDate = null;
 function openLoad(d, mine, all) {
   loadDate = d; loadItems = mine.map(t => ({ t, exists: tplExists(t, all), on: !tplExists(t, all) }));
-  $("ldTitle").textContent = `${md(d)} (${dow(d)}) 고정 수업 불러오기`; $("ldErr").textContent = "";
+  $("ldTitle").textContent = `${md(d)} (${dow(d)}) 내 고정 수업 불러오기`; $("ldErr").textContent = "";
   drawLoad(); show($("loadSheet"));
 }
 function drawLoad() {
@@ -827,7 +839,7 @@ function openLesson(l, mode) {
   editing = l || null; $("lTitle").textContent = (tplMode ? "고정 수업 " : "수업 ") + (l ? "수정" : "추가"); $("lDel").hidden = !l; $("lErr").textContent = "";
   $("fDateBox").hidden = tplMode; $("fWdBox").hidden = !tplMode;
   $("fWd").value = String(l && tplMode ? l.wd : tplWd);
-  fillTrainers(l ? l.trainer : null); $("fDate").value = l && !tplMode ? l.date : iso(cur); $("fStart").value = l ? l.start : "";
+  fillTrainers(l ? l.trainer : tplMode ? tplTrainer : null); $("fDate").value = l && !tplMode ? l.date : iso(cur); $("fStart").value = l ? l.start : "";
   picked = l ? [...l.ids] : []; $("fFind").value = "";
   $("fTeam").value = l && l.type === "team" ? l.team : ""; setGrades(l && l.type === "team" ? l.grade : "");
   setType(l ? l.type : "personal"); show($("lessonSheet"));

@@ -273,3 +273,4 @@ body{margin:0}
 .amanage{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}
 .amanage button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700}
 .amanage .danger{color:var(--danger)}
+.tpwho{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg);font-weight:600;width:100%}
