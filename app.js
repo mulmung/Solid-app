@@ -60,7 +60,9 @@ const T = id => trainers.find(t => t.id === id);
 const B = id => branches.find(b => b.id === id);
 const BN = id => (B(id) || {}).name || Object.values(workCache).flat().find(b => b && b.id === id)?.name || "다른 지점";
 const inBranch = (map, id, b) => !!(map[id] && map[id].has(b));
-const athletesHere = () => athletes.filter(a => inBranch(athleteBr, a.id, curBranch));
+const athletesHere = () => athletes.filter(a => !a.archived && inBranch(athleteBr, a.id, curBranch));
+const archivedHere = () => athletes.filter(a => a.archived && inBranch(athleteBr, a.id, curBranch));
+const canManageAthlete = a => isAdmin() || [...(athleteBr[a.id] || [])].some(b => managerBr[me.id] && managerBr[me.id].has(b));
 function setBranch(id) { curBranch = id; try { localStorage.setItem("solid.branch", String(id)); } catch (e) {} }
 const TN = id => { const t = T(id); return t ? `${t.name} 트레이너` : "트레이너 미지정"; };
 const A = id => athletes.find(a => a.id === id);
@@ -96,7 +98,7 @@ async function fetchAll(table, select, build) {
   }
 }
 const mapTrainer = r => ({ id: r.id, name: r.name, email: r.email, role: r.role, active: r.active, linked: !!r.user_id });
-const mapAthlete = r => ({ id: r.id, name: r.name, team: r.team, plan: r.plan, price: r.price, by: r.birth_year });
+const mapAthlete = r => ({ id: r.id, name: r.name, team: r.team, plan: r.plan, price: r.price, by: r.birth_year, archived: !!r.archived });
 const mapPay = r => ({ id: r.id, branch: r.branch_id, aid: r.athlete_id, kind: r.kind, date: r.date, count: r.count, used: r.used || 0, price: r.price, vat: r.vat, method: r.method, memo: r.memo, month: r.month, lessonId: r.lesson_id });
 function mapLesson(r, rows) {
   const att = {}, ids = [];
@@ -105,12 +107,13 @@ function mapLesson(r, rows) {
 }
 
 async function loadBase() {
-  const [br, tbr, abr, tr, at, pa, st, rc] = await Promise.all([
+  const [br, tbr, abr, tr, at, tpl, pa, st, rc] = await Promise.all([
     fetchAll("branches", "id,name,active", q => q.order("id")),
     fetchAll("trainer_branches", "trainer_id,branch_id,is_manager"),
     fetchAll("athlete_branches", "athlete_id,branch_id"),
     fetchAll("trainers", "id,name,email,role,active,user_id", q => q.order("id")),
-    fetchAll("athletes", "id,name,team,plan,price,birth_year", q => q.order("id")),
+    fetchAll("athletes", "id,name,team,plan,price,birth_year,archived", q => q.order("id")),
+    fetchAll("lesson_templates", "*", q => q.order("start_time")),
     fetchAll("payments", "*", q => q.order("id")),
     fetchAll("athlete_month_stats", "*"),
     fetchAll("athlete_trainer_recent", "*"),
@@ -121,6 +124,7 @@ async function loadBase() {
   athleteBr = {}; abr.forEach(r => (athleteBr[r.athlete_id] ||= new Set()).add(r.branch_id));
   trainers = tr.map(mapTrainer);
   athletes = at.map(mapAthlete);
+  templates = tpl.map(r => ({ id: r.id, branch: r.branch_id, wd: r.weekday, type: r.type, trainer: r.trainer_id, start: r.start_time.slice(0, 5), team: r.team, grade: r.grade, ids: r.athlete_ids || [] }));
   payments = pa.map(mapPay);
   stats = {};
   st.forEach(r => {
@@ -276,6 +280,7 @@ async function renderSched() {
   $("summary").innerHTML = `<span>${view === "mine" ? "내 수업" : "총"} ${day.length}개${view === "mine" ? "" : " 수업"}</span>` + ["personal", "group", "team"].map(t => `<span class="chip ${t}">${LABEL[t]} ${cnt(t)}</span>`).join("");
   list.innerHTML = "";
   if (d === todayIso()) list.appendChild(checkinCard());
+  const lb = loadBtn(d, all); if (lb) list.appendChild(lb);
   if (!day.length) { list.insertAdjacentHTML("beforeend", `<div class="empty">${view === "mine" ? (all.length ? `이 날은 내 수업이 없어요.<br>지점 전체 ${all.length}개 수업은 트레이너별이나 시간순에서 볼 수 있어요.` : "이 날은 내 수업이 없어요.") : "이 날은 등록된 수업이 없어요."}<br>아래 <b>+ 수업 추가</b>로 등록해보세요.</div>`); return; }
   if (view === "trainer") {
     const order = [...trainers].sort((x, y) => (me && x.id === me.id ? -1 : 0) - (me && y.id === me.id ? -1 : 0));
@@ -382,6 +387,7 @@ $("wkPick").onchange = e => { if (e.target.value) { workDay = parse(e.target.val
 
 /* ---------- 출석부: 선수 목록 ---------- */
 let listFilter = null; // null | "pay" | "unc"
+let showArchived = false;
 const needsPay = a => status(a).chip[0] === "bad";
 const hasUnc = a => ((stats[a.id] || {}).unchecked || 0) > 0;
 function renderList() {
@@ -397,8 +403,26 @@ function renderList() {
   $("summary").querySelectorAll(".fchip").forEach(b => b.onclick = () => { listFilter = listFilter === b.dataset.f ? null : b.dataset.f; renderList(); });
   const box = $("list"); box.innerHTML = "";
   if (!curBranch) { box.innerHTML = `<div class="empty">배정된 지점이 없어요.<br>관리자에게 지점 배정을 요청하세요.</div>`; return; }
-  if (!here.length) { box.innerHTML = `<div class="empty">아직 등록된 선수가 없어요.<br>아래 <b>+ 선수 등록</b>으로 시작하세요.</div>`; return; }
-  if (!list.length) { box.innerHTML = `<div class="empty">${q ? `'${esc(q)}'에 맞는 선수가 없어요.` : "해당하는 선수가 없어요."}</div>`; return; }
+  const arch = archivedHere();
+  const archBtn = () => {
+    if (!arch.length) return;
+    const b = document.createElement("button"); b.type = "button"; b.className = "archtoggle";
+    b.textContent = showArchived ? `보관된 선수 ${arch.length}명 접기` : `보관된 선수 ${arch.length}명`;
+    b.onclick = () => { showArchived = !showArchived; renderList(); };
+    box.appendChild(b);
+    if (showArchived) {
+      const w = document.createElement("div"); w.className = "plist";
+      arch.filter(a => match(a, q)).sort((x, y) => x.name.localeCompare(y.name, "ko")).forEach(a => {
+        const r = document.createElement("button"); r.className = "prow archived";
+        r.innerHTML = `<span class="n">${esc(a.name)}</span><span class="s">${esc(a.team)}${a.by ? " · " + ageText(a) : ""} · ${PLAN[a.plan]}</span><span class="st"><span class="chip plain">보관됨</span></span>`;
+        r.onclick = () => openLedger(a.id); w.appendChild(r);
+      });
+      box.appendChild(w);
+    }
+  };
+  if (!here.length) { box.innerHTML = `<div class="empty">아직 등록된 선수가 없어요.<br>아래 <b>+ 선수 등록</b>으로 시작하세요.</div>`; archBtn(); return; }
+
+  if (!list.length) { box.innerHTML = `<div class="empty">${q ? `'${esc(q)}'에 맞는 선수가 없어요.` : "해당하는 선수가 없어요."}</div>`; archBtn(); return; }
   const wrap = document.createElement("div"); wrap.className = "plist";
   list.forEach(a => {
     const s = status(a); const u = (stats[a.id] || {}).unchecked || 0; const b = document.createElement("button"); b.className = "prow";
@@ -407,6 +431,7 @@ function renderList() {
     b.onclick = () => openLedger(a.id); wrap.appendChild(b);
   });
   box.appendChild(wrap);
+  archBtn();
 }
 async function openLedger(id) {
   if (layer() !== "ledger") history.pushState({ layer: "ledger" }, "");
@@ -426,7 +451,7 @@ function payLabel(p) {
 function renderLedger() {
   const a = A(ledgerId); if (!a) { ledgerId = null; return render(); }
   $("lgName").textContent = a.name;
-  $("lgSub").textContent = `${[...(athleteBr[a.id] || [])].map(BN).join("·")} · ${a.team}${a.by ? " · " + ageText(a) : ""} · ${PLAN[a.plan]} · 단가 ${won(a.price)}`;
+  $("lgSub").textContent = `${a.archived ? "보관됨 · " : ""}${[...(athleteBr[a.id] || [])].map(BN).join("·")} · ${a.team}${a.by ? " · " + ageText(a) : ""} · ${PLAN[a.plan]} · 단가 ${won(a.price)}`;
   $("summary").innerHTML = "";
   const box = $("list");
   if (!ledgerLessons) { box.innerHTML = `<div class="loading">불러오는 중…</div>`; return; }
@@ -469,14 +494,97 @@ function renderLedger() {
   box.insertAdjacentHTML("beforeend", `<p class="hint" style="margin:0">수업 줄을 누르면 출석·취소를 기록하고, 결제 줄을 누르면 수정할 수 있어요.</p>`);
 }
 
-/* ---------- 화면 전환 ---------- */
+/* ---------- 고정표 ---------- */
+let templates = [], tplOpen = false, tplWd = 1, tplMode = false;
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+const WD_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const tplHere = wd => templates.filter(t => t.branch === curBranch && t.wd === wd).sort((a, b) => toMin(a.start) - toMin(b.start) || a.trainer - b.trainer);
+const tplWho = t => t.type === "team" ? `${t.team} · ${t.grade}` : t.ids.map(id => (A(id) || {}).name).filter(Boolean).join(", ") || "(선수 없음)";
+function openTpl() {
+  if (layer() !== "tpl") history.pushState({ layer: "tpl" }, "");
+  tplOpen = true; tplWd = cur.getDay(); render(); window.scrollTo(0, 0);
+}
+function leaveTpl() { if (layer() === "tpl") history.back(); else { tplOpen = false; render(); } }
+function renderTpl() {
+  $("tpTitle").textContent = `고정표 · ${BN(curBranch)}`;
+  const days = $("tpDays"); days.innerHTML = "";
+  WD_ORDER.forEach(w => {
+    const n = tplHere(w).length; const b = document.createElement("button"); b.type = "button";
+    b.setAttribute("aria-pressed", w === tplWd); b.innerHTML = `${WD[w]}${n ? `<small>${n}</small>` : ""}`;
+    b.onclick = () => { tplWd = w; renderTpl(); }; days.appendChild(b);
+  });
+  const list = tplHere(tplWd);
+  $("summary").innerHTML = `<span>${WD[tplWd]}요일 고정 수업 ${list.length}개</span><span class="hint">스케줄에서 불러오기를 누르면 그날 수업으로 만들어져요</span>`;
+  const box = $("list"); box.innerHTML = "";
+  if (!list.length) { box.innerHTML = `<div class="empty">${WD[tplWd]}요일 고정 수업이 없어요.<br>아래 <b>+ 고정 수업 추가</b>로 등록해보세요.</div>`; return; }
+  const sec = document.createElement("section"); sec.className = "section";
+  list.forEach(t => {
+    const can = canEdit({ trainer: t.trainer, branch: t.branch });
+    const el = document.createElement("div"); el.className = `lesson ${t.type}`;
+    el.innerHTML = `<div class="time">${t.start}<small>~ ${toTime(toMin(t.start) + DUR[t.type])}</small></div>
+      <div class="body"><div class="row1"><span class="chip ${t.type}">${LABEL[t.type]}</span><span class="meta">${esc(TN(t.trainer))}</span>${can ? `<button class="edit">수정</button>` : ""}</div><div class="whoT"></div></div>`;
+    el.querySelector(".whoT").textContent = tplWho(t);
+    const e = el.querySelector(".edit"); if (e) e.onclick = () => openLesson(t, "tpl");
+    sec.appendChild(el);
+  });
+  box.appendChild(sec);
+}
+$("tplBtn").onclick = openTpl;
+$("tpBack").onclick = leaveTpl;
+
+/* 스케줄: 고정 수업 불러오기 */
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+const tplExists = (t, day) => day.some(l => l.trainer === t.trainer && l.start === t.start && l.type === t.type &&
+  (t.type === "team" ? l.team === t.team && l.grade === t.grade : sameSet(l.ids, t.ids.filter(id => A(id) && !A(id).archived))));
+function loadBtn(d, all) {
+  const wd = parse(d).getDay();
+  const mine = tplHere(wd).filter(t => canEdit({ trainer: t.trainer, branch: t.branch }));
+  if (!mine.length) return null;
+  const left = mine.filter(t => !tplExists(t, all));
+  const b = document.createElement("button"); b.type = "button"; b.className = "loadbtn";
+  if (!left.length) { b.textContent = "고정 수업 모두 불러옴"; b.disabled = true; }
+  else { b.textContent = `${WD[wd]}요일 고정 수업 불러오기 (${left.length}개)`; b.onclick = () => openLoad(d, mine, all); }
+  return b;
+}
+let loadItems = [], loadDate = null;
+function openLoad(d, mine, all) {
+  loadDate = d; loadItems = mine.map(t => ({ t, exists: tplExists(t, all), on: !tplExists(t, all) }));
+  $("ldTitle").textContent = `${md(d)} (${dow(d)}) 고정 수업 불러오기`; $("ldErr").textContent = "";
+  drawLoad(); show($("loadSheet"));
+}
+function drawLoad() {
+  const box = $("ldList"); box.innerHTML = "";
+  loadItems.forEach(it => {
+    const t = it.t; const row = document.createElement("label"); row.className = "ldrow" + (it.exists ? " off" : "");
+    row.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} ${it.exists ? "disabled" : ""}><span class="ldt">${t.start}</span><span class="ldc"><b></b><span>${LABEL[t.type]} · ${esc(TN(t.trainer))}${it.exists ? " · 이미 있음" : ""}</span></span>`;
+    row.querySelector("b").textContent = tplWho(t);
+    row.querySelector("input").onchange = e => { it.on = e.target.checked; drawLoadBtn(); };
+    box.appendChild(row);
+  });
+  drawLoadBtn();
+}
+function drawLoadBtn() { const n = loadItems.filter(i => i.on && !i.exists).length; $("ldGo").textContent = n ? `${n}개 추가` : "추가할 수업 없음"; $("ldGo").disabled = !n; }
+$("ldGo").onclick = () => busy($("ldGo"), async () => {
+  const todo = loadItems.filter(i => i.on && !i.exists); let done = 0;
+  for (const { t } of todo) {
+    const row = { type: t.type, branch_id: curBranch, trainer_id: t.trainer, date: loadDate, start_time: t.start, team: t.type === "team" ? t.team : null, grade: t.type === "team" ? t.grade : null };
+    const { data, error } = await sb.from("lessons").insert(row).select("id").single();
+    if (error) { $("ldErr").textContent = friendly(error); break; }
+    const ids = t.type === "team" ? [] : t.ids.filter(id => A(id) && !A(id).archived);
+    if (ids.length) { const { error: e2 } = await sb.from("lesson_athletes").insert(ids.map(a => ({ lesson_id: data.id, athlete_id: a }))); if (e2) { $("ldErr").textContent = friendly(e2); break; } }
+    done++;
+  }
+  if (done) { if (done === todo.length) close(); toast(`고정 수업 ${done}개를 추가했어요`); refresh(); }
+});
+
 function render() {
   $("tabS").setAttribute("aria-pressed", tab === "sched"); $("tabR").setAttribute("aria-pressed", tab === "roll");
-  $("hWork").hidden = !workOpen;
-  $("hSched").hidden = tab !== "sched" || workOpen; $("hList").hidden = !(tab === "roll" && !ledgerId) || workOpen; $("hLedger").hidden = !(tab === "roll" && ledgerId) || workOpen;
+  $("hWork").hidden = !workOpen; $("hTpl").hidden = !tplOpen || workOpen;
+  $("hSched").hidden = tab !== "sched" || workOpen || tplOpen; $("hList").hidden = !(tab === "roll" && !ledgerId) || workOpen || tplOpen; $("hLedger").hidden = !(tab === "roll" && ledgerId) || workOpen || tplOpen;
   $("fab").hidden = tab === "roll" && !!ledgerId; $("fab").textContent = tab === "sched" ? "+ 수업 추가" : "+ 선수 등록";
   $("mgrBtn").hidden = !isAdmin(); $("expBtn").hidden = !managedBranches().length;
   if (workOpen) { $("fab").hidden = true; renderWork(); return; }
+  if (tplOpen) { $("fab").hidden = false; $("fab").textContent = "+ 고정 수업 추가"; renderTpl(); return; }
   if (tab === "sched") renderSched(); else if (ledgerId) renderLedger(); else renderList();
 }
 
@@ -505,6 +613,7 @@ window.addEventListener("popstate", () => {
   if (ignorePop) { ignorePop = false; return; }
   if (openSheetEl) { hideSheet(); return; }
   if (workOpen && layer() !== "work") { workOpen = false; render(); return; }
+  if (tplOpen && layer() !== "tpl") { tplOpen = false; render(); return; }
   if (ledgerId && layer() !== "ledger") { ledgerId = null; render(); }
 });
 $("scrim").onclick = () => close(); document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => close());
@@ -713,26 +822,36 @@ document.querySelectorAll("#fGrades button").forEach(b => b.onclick = () => {
   if (b.dataset.g === "etc") { gradeEtc = !gradeEtc; drawGrades(); if (gradeEtc) $("fGrade").focus(); }
   else { grades.has(b.dataset.g) ? grades.delete(b.dataset.g) : grades.add(b.dataset.g); drawGrades(); }
 });
-function openLesson(l) {
-  editing = l || null; $("lTitle").textContent = l ? "수업 수정" : "수업 추가"; $("lDel").hidden = !l; $("lErr").textContent = "";
-  fillTrainers(l ? l.trainer : null); $("fDate").value = l ? l.date : iso(cur); $("fStart").value = l ? l.start : "";
+function openLesson(l, mode) {
+  tplMode = mode === "tpl";
+  editing = l || null; $("lTitle").textContent = (tplMode ? "고정 수업 " : "수업 ") + (l ? "수정" : "추가"); $("lDel").hidden = !l; $("lErr").textContent = "";
+  $("fDateBox").hidden = tplMode; $("fWdBox").hidden = !tplMode;
+  $("fWd").value = String(l && tplMode ? l.wd : tplWd);
+  fillTrainers(l ? l.trainer : null); $("fDate").value = l && !tplMode ? l.date : iso(cur); $("fStart").value = l ? l.start : "";
   picked = l ? [...l.ids] : []; $("fFind").value = "";
   $("fTeam").value = l && l.type === "team" ? l.team : ""; setGrades(l && l.type === "team" ? l.grade : "");
   setType(l ? l.type : "personal"); show($("lessonSheet"));
 }
 $("lDel").onclick = () => confirmBtn($("lDel"), "정말 삭제", () => busy($("lDel"), async () => {
-  const { error } = await sb.from("lessons").delete().eq("id", editing.id);
+  const { error } = await sb.from(tplMode ? "lesson_templates" : "lessons").delete().eq("id", editing.id);
   if (error) return $("lErr").textContent = friendly(error);
   close(); toast("삭제했어요"); refresh();
 }));
 $("lForm").onsubmit = e => { e.preventDefault(); busy($("lForm").querySelector(".primary"), async () => {
   if (!$("fTrainer").value) return $("lErr").textContent = "이 지점에 배정된 트레이너가 없어요. 트레이너 관리에서 지점을 배정해주세요.";
   const row = { type: fType, branch_id: editing ? editing.branch : curBranch, trainer_id: Number($("fTrainer").value), date: $("fDate").value, start_time: $("fStart").value, team: null, grade: null };
-  if (!row.date || !row.start_time) return $("lErr").textContent = "날짜와 시작 시간을 입력해주세요.";
+  if (tplMode) { delete row.date; if (!row.start_time) return $("lErr").textContent = "시작 시간을 입력해주세요."; }
+  else if (!row.date || !row.start_time) return $("lErr").textContent = "날짜와 시작 시간을 입력해주세요.";
   if (fType === "personal" && picked.length !== 1) return $("lErr").textContent = "선수를 1명 선택해주세요.";
   if (fType === "group" && picked.length < 2) return $("lErr").textContent = "그룹 수업은 선수를 2명 이상 선택해주세요.";
   if (fType === "team") { row.team = $("fTeam").value.trim(); row.grade = gradeText(); if (row.grade === null) return $("lErr").textContent = "기타 학년 내용을 입력해주세요."; if (!row.team || !row.grade) return $("lErr").textContent = !row.team ? "학교 또는 팀을 입력해주세요." : "학년을 선택해주세요."; }
   const ids = fType === "team" ? [] : [...picked];
+  if (tplMode) {
+    const trow = { ...row, weekday: Number($("fWd").value), athlete_ids: ids };
+    const { error } = editing ? await sb.from("lesson_templates").update(trow).eq("id", editing.id) : await sb.from("lesson_templates").insert(trow);
+    if (error) return $("lErr").textContent = friendly(error);
+    tplWd = trow.weekday; close(); toast("고정표에 저장했어요"); refresh(); return;
+  }
   let lid;
   if (editing) {
     const { error } = await sb.from("lessons").update(row).eq("id", editing.id);
@@ -906,8 +1025,28 @@ function openAthForm(a) {
   $("aName").value = a ? a.name : ""; $("aTeam").value = a ? a.team : ""; $("aPrice").value = a ? a.price : "";
   $("aBirth").value = a && a.by ? ageOf(a.by) : ""; birthHint();
   aBr = new Set(a ? [...(athleteBr[a.id] || [])] : [curBranch]); drawAthBranches();
-  setPlan(a ? a.plan : "pass"); show($("athForm"));
+  setPlan(a ? a.plan : "pass");
+  const mg = !!a && canManageAthlete(a);
+  $("aManage").hidden = !mg;
+  if (mg) {
+    $("aArchive").textContent = a.archived ? "복원하기" : "보관하기";
+    const hasRec = paysOf(a).length > 0 || (ledgerId === a.id && ledgerLessons ? ledgerLessons.length > 0 : true);
+    $("aDelete").hidden = hasRec;
+    $("aManageHint").textContent = a.archived ? "복원하면 선수 목록과 수업 검색에 다시 나와요." : hasRec ? "기록이 있는 선수는 보관만 할 수 있어요. 보관해도 지난 출석·결제 기록은 남아요." : "기록이 없는 선수라 완전히 삭제할 수도 있어요.";
+  }
+  show($("athForm"));
 }
+$("aArchive").onclick = () => confirmBtn($("aArchive"), aEditing && aEditing.archived ? "정말 복원" : "정말 보관", () => busy($("aArchive"), async () => {
+  const to = !aEditing.archived;
+  const { error } = await sb.from("athletes").update({ archived: to }).eq("id", aEditing.id);
+  if (error) return $("aErr").textContent = error.message.replace(/^.*?: /, "");
+  close(); toast(to ? `${aEditing.name} 선수를 보관했어요` : `${aEditing.name} 선수를 복원했어요`); refresh();
+}));
+$("aDelete").onclick = () => confirmBtn($("aDelete"), "정말 삭제", () => busy($("aDelete"), async () => {
+  const { error } = await sb.rpc("delete_athlete", { p_id: aEditing.id });
+  if (error) return $("aErr").textContent = error.message.replace(/^.*?: /, "");
+  const name = aEditing.name; close(); if (ledgerId) leaveLedger(); toast(`${name} 선수를 삭제했어요`); refresh();
+}));
 $("aForm").onsubmit = e => { e.preventDefault(); busy($("aForm").querySelector(".primary"), async () => {
   const name = $("aName").value.trim(), team = $("aTeam").value.trim() || "개인", price = Number($("aPrice").value), ageIn = $("aBirth").value;
   if (!name) return $("aErr").textContent = "이름을 입력해주세요.";
@@ -939,12 +1078,12 @@ $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
 document.querySelectorAll('input[type="date"], input[type="month"], input[type="time"]').forEach(inp => inp.addEventListener("click", () => { try { inp.showPicker(); } catch (e) {} }));
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
 $("vTrainer").onclick = () => setView("trainer"); $("vTime").onclick = () => setView("time"); $("vMine").onclick = () => setView("mine");
-$("tabS").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
-$("tabR").onclick = () => { if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
+$("tabS").onclick = () => { if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
+$("tabR").onclick = () => { if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
 $("backBtn").onclick = leaveLedger;
 $("aSearch").oninput = renderList;
 $("branchSel").onchange = e => { setBranch(Number(e.target.value)); if (ledgerId) leaveLedger(); render(); };
-$("fab").onclick = () => tab === "sched" ? openLesson() : openAthForm();
+$("fab").onclick = () => tplOpen ? openLesson(null, "tpl") : tab === "sched" ? openLesson() : openAthForm();
 // 다른 트레이너가 바꾼 내용을 반영: 앱으로 돌아올 때 새로고침
 let lastLoad = Date.now();
 /* ---------- 실시간 반영 ----------
