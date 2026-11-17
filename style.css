@@ -274,3 +274,35 @@ body{margin:0}
 .amanage button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700}
 .amanage .danger{color:var(--danger)}
 .tpwho{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg);font-weight:600;width:100%}
+
+/* 장부 탭 */
+.lgtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px}
+.lgtabs button{border:0;background:none;border-radius:9px;height:40px;font-weight:700;color:var(--muted)}
+.lgtabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent)}
+.tabadd{height:44px;border-radius:12px;border:1px dashed var(--accent);background:var(--surface);color:var(--accent);font-weight:700}
+.infobox{border:1px solid var(--line);border-radius:12px;padding:6px 14px 14px;display:grid;gap:0}
+.kv2{display:flex;justify-content:space-between;gap:12px;padding-block:11px;border-bottom:1px solid var(--line);font-size:14px}
+.kv2 span{color:var(--muted)}
+.kv2 b{text-align:right;overflow-wrap:anywhere}
+.infobox .tabadd{margin-top:12px}
+/* 측정 기록 */
+.mscard{border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px}
+.mslines{display:grid;gap:6px;margin-top:8px}
+.msline{display:block;text-align:left;border:0;background:var(--bg);border-radius:10px;padding:9px 12px;font-size:14px;color:var(--fg)}
+button.msline{background:var(--accent-soft);color:var(--accent);cursor:pointer}
+.msline span{color:var(--muted);font-size:12px}
+.mschart{border:1px solid var(--line);border-radius:12px;padding:8px}
+.mschart svg{width:100%;height:auto;display:block}
+.up{color:var(--ok);font-size:12px;font-weight:700}
+/* 순위 */
+.srow{display:flex;gap:8px;align-items:center}
+.srow .search{flex:1;min-width:0}
+.divgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.divcard{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:16px 14px;display:grid;gap:4px;text-align:left}
+.divcard b{font-size:18px}
+.divcard .dtop{font-family:var(--mono);font-weight:600;color:var(--accent);font-size:14px}
+.ledger.rank .lr{grid-template-columns:56px 1fr auto}
+.rkrow .rk{display:flex;align-items:center;gap:4px;font-family:var(--mono)}
+.rkrow .rk b{font-size:15px}
+.rkrow .rn{font-size:16px;color:var(--fg)}
+#hRank .seg{grid-template-columns:1fr 1fr}

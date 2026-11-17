@@ -72,7 +72,7 @@
         <button class="today" id="todayBtn">오늘</button><button class="today" id="tplBtn">고정표</button>
       </div>
     </div>
-    <div id="hList" hidden><input class="search" id="aSearch" placeholder="이름, 초성(ㄱㅁㅈ), 소속으로 검색" aria-label="선수 검색"></div>
+    <div id="hList" hidden class="srow"><input class="search" id="aSearch" placeholder="이름, 초성(ㄱㅁㅈ), 소속으로 검색" aria-label="선수 검색"><button class="ib" id="rankBtn" aria-label="최대 속도 순위" title="순위"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8.5 20h7M10 17h4"/></svg></button></div>
     <div id="hWork" hidden style="display:grid;gap:10px">
       <div class="back"><button id="wkBack" class="ib backib" aria-label="스케줄로 돌아가기" title="스케줄로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="wkTitle">출근 기록</b></div></div>
       <div class="datebar"><button class="navb" id="wkPrev" aria-label="이전 날">‹</button><div class="datelabel"><strong id="wkMonth"></strong><small id="wkSub"></small><input type="date" id="wkPick" aria-label="날짜 선택"></div><button class="navb" id="wkNext" aria-label="다음 날">›</button></div>
@@ -81,6 +81,10 @@
       <div class="back"><button id="tpBack" class="ib backib" aria-label="스케줄로 돌아가기" title="스케줄로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="tpTitle">고정표</b></div></div>
       <select id="tpWho" class="tpwho" aria-label="트레이너 선택" hidden></select>
       <div class="wdbar" id="tpDays" role="group" aria-label="요일"></div>
+    </div>
+    <div id="hRank" hidden style="display:grid;gap:10px">
+      <div class="back"><button id="rkBack" class="ib backib" aria-label="돌아가기" title="돌아가기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="rkTitle">최대 속도 순위</b></div></div>
+      <div class="seg" id="rkSeg" role="group" aria-label="성별" hidden><button id="rkM" aria-pressed="true">남자</button><button id="rkF" aria-pressed="false">여자</button></div>
     </div>
     <div id="hLedger" hidden class="back"><button id="backBtn" class="ib backib" aria-label="선수 목록으로 돌아가기" title="목록으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="lgName"></b><span id="lgSub"></span></div></div>
   </div>
@@ -224,6 +228,7 @@
       <div class="field"><label for="aTeam">소속</label><input id="aTeam" placeholder="예: 한빛중 축구부"></div>
     </div>
     <div class="field" id="aBrBox"><span class="lbl">지점 (다른 지점에서도 수업하면 함께 선택)</span><div class="brchips" id="aBranches"></div></div>
+    <div class="field"><span class="lbl">성별</span><div class="opts" id="aGenders" style="grid-template-columns:1fr 1fr"><button type="button" data-x="M">남</button><button type="button" data-x="F">여</button></div></div>
     <div class="field"><label for="aBirth">나이 (한국 나이)</label><input id="aBirth" type="number" min="1" max="100" inputmode="numeric" placeholder="예: 15"><span class="hint" id="aAgeHint"></span></div>
     <div class="field"><span class="lbl">기본 결제 방식</span>
       <div class="opts" id="plans">
@@ -265,6 +270,20 @@
     <p class="err" id="ldErr" role="alert"></p>
     <div class="actions"><button type="button" data-close>취소</button><button type="button" class="primary" id="ldGo">추가</button></div>
   </div>
+</div>
+
+<!-- 측정 기록 -->
+<div class="sheet" id="msSheet" hidden role="dialog" aria-modal="true" aria-labelledby="msTitle">
+  <form id="msForm" novalidate>
+    <div><h3 id="msTitle">측정 기록</h3><div class="hint">무동력 트레드밀 최대 속도</div></div>
+    <div class="two">
+      <div class="field"><label for="msDate">측정일</label><input id="msDate" type="date"></div>
+      <div class="field"><label for="msSpeed">최대 속도 (km/h)</label><input id="msSpeed" type="number" step="0.1" min="5" max="45" inputmode="decimal" placeholder="예: 28.4"></div>
+    </div>
+    <div class="field"><label for="msMemo">메모</label><input id="msMemo" placeholder="예: 컨디션 저하, 30m 구간"></div>
+    <p class="err" id="msErr" role="alert"></p>
+    <div class="actions"><button type="button" class="del" id="msDel" hidden>삭제</button><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
 </div>
 
 <!-- 출근 기록 수정·추가 -->

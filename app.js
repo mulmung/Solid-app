@@ -98,7 +98,7 @@ async function fetchAll(table, select, build) {
   }
 }
 const mapTrainer = r => ({ id: r.id, name: r.name, email: r.email, role: r.role, active: r.active, linked: !!r.user_id });
-const mapAthlete = r => ({ id: r.id, name: r.name, team: r.team, plan: r.plan, price: r.price, by: r.birth_year, archived: !!r.archived });
+const mapAthlete = r => ({ id: r.id, name: r.name, team: r.team, plan: r.plan, price: r.price, by: r.birth_year, archived: !!r.archived, gender: r.gender || null });
 const mapPay = r => ({ id: r.id, branch: r.branch_id, aid: r.athlete_id, kind: r.kind, date: r.date, count: r.count, used: r.used || 0, price: r.price, vat: r.vat, method: r.method, memo: r.memo, month: r.month, lessonId: r.lesson_id });
 function mapLesson(r, rows) {
   const att = {}, ids = [];
@@ -112,7 +112,7 @@ async function loadBase() {
     fetchAll("trainer_branches", "trainer_id,branch_id,is_manager"),
     fetchAll("athlete_branches", "athlete_id,branch_id"),
     fetchAll("trainers", "id,name,email,role,active,user_id", q => q.order("id")),
-    fetchAll("athletes", "id,name,team,plan,price,birth_year,archived", q => q.order("id")),
+    fetchAll("athletes", "id,name,team,plan,price,birth_year,archived,gender", q => q.order("id")),
     fetchAll("lesson_templates", "*", q => q.order("start_time")),
     fetchAll("payments", "*", q => q.order("id")),
     fetchAll("athlete_month_stats", "*"),
@@ -132,6 +132,7 @@ async function loadBase() {
     s.charged += Number(r.charged); s.byMonth[r.month] = Number(r.charged); s.unchecked += Number(r.unchecked); s.unpaid += Number(r.unpaid_visit);
   });
   recent = {}; rc.forEach(r => recent[`${r.athlete_id}-${r.trainer_id}`] = r.last_date);
+  rankData = null;
   await loadMyCheckin(); workCache = {};
   // 보고 있던 지점 유지, 없으면 내 첫 지점
   const mine = branches.filter(b => b.active && (isAdmin() || inBranch(trainerBr, me.id, b.id)));
@@ -174,7 +175,10 @@ async function fetchAthleteLessons(aid) {
     q => q.eq("athlete_id", aid));
   return rows.filter(r => r.lesson).map(r => mapLesson(r.lesson, [r]));
 }
-async function loadLedger(aid) { ledgerLessons = await fetchAthleteLessons(aid); }
+async function loadLedger(aid) {
+  const [ls, ms] = await Promise.all([fetchAthleteLessons(aid), fetchAll("measurements", "*", q => q.eq("athlete_id", aid).order("measured_on", { ascending: false }).order("id", { ascending: false }))]);
+  ledgerLessons = ls; ledgerMs = ms;
+}
 
 /* 저장 후 화면 갱신 */
 let lastRefresh = 0;
@@ -460,9 +464,14 @@ function renderLedger() {
   if (a.plan === "pass") top = `<div><div class="hint">남은 회차</div><div class="big num" style="color:var(--${s.left <= 0 ? "danger" : s.left === 1 ? "warn" : "ok"})">${s.left}<span style="font-size:15px;color:var(--muted)"> / ${s.total}</span></div></div>`;
   if (a.plan === "monthly") top = `<div><div class="hint">이번 달 진행</div><div class="big num">${s.n}회 <span style="font-size:15px;color:var(--muted)">· ${won(s.n * a.price)}</span></div>${s.open.length ? `<div class="hint" style="color:var(--danger)">미정산: ${s.open.map(m => Number(m.slice(5)) + "월").join(", ")}</div>` : ""}</div>`;
   if (a.plan === "visit") top = `<div><div class="hint">미결제</div><div class="big num" style="color:var(--${s.unpaid ? "danger" : "ok"})">${s.unpaid}건</div></div>`;
-  box.innerHTML = `<div class="sumbox"><div class="sumrow">${top}<span class="chip ${s.chip[0]}">${s.chip[1]}</span></div>
-    <div class="sumbtns"><button id="editAth">선수 정보</button><button class="primary" id="addPay">+ 결제 기록</button></div></div>`;
-  $("editAth").onclick = () => openAthForm(a); $("addPay").onclick = () => openPay(a);
+  const TABS = [["pay", "결제 기록"], ["ms", "측정 기록"], ["info", "선수 정보"]];
+  box.innerHTML = `<div class="sumbox"><div class="sumrow">${top}<span class="chip ${s.chip[0]}">${s.chip[1]}</span></div></div>
+    <div class="lgtabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" role="tab" data-k="${k}" aria-selected="${ledgerTab === k}">${t}</button>`).join("")}</div>`;
+  box.querySelectorAll(".lgtabs button").forEach(b => b.onclick = () => { ledgerTab = b.dataset.k; try { localStorage.setItem("solid.lgtab", ledgerTab); } catch (e) {} renderLedger(); });
+  if (ledgerTab === "info") return renderInfo(a, box);
+  if (ledgerTab === "ms") return renderMs(a, box);
+  const addP = document.createElement("button"); addP.type = "button"; addP.className = "tabadd"; addP.textContent = "+ 결제 추가";
+  addP.onclick = () => openPay(a); box.appendChild(addP);
 
   const rows = [...ls.map(l => ({ t: "l", date: l.date, k: toMin(l.start), l })), ...paysOf(a).map(p => ({ t: "p", date: p.date, k: -1, p }))]
     .sort((x, y) => y.date.localeCompare(x.date) || y.k - x.k); // 최신 순
@@ -493,6 +502,160 @@ function renderLedger() {
   box.appendChild(lg);
   box.insertAdjacentHTML("beforeend", `<p class="hint" style="margin:0">수업 줄을 누르면 출석·취소를 기록하고, 결제 줄을 누르면 수정할 수 있어요.</p>`);
 }
+
+/* ---------- 장부 탭: 선수 정보 ---------- */
+let ledgerTab = "pay", ledgerMs = [];
+try { const t = localStorage.getItem("solid.lgtab"); if (["pay", "ms", "info"].includes(t)) ledgerTab = t; } catch (e) {}
+const GEN = { M: "남", F: "여" };
+function renderInfo(a, box) {
+  const kv = [["이름", a.name], ["성별", a.gender ? GEN[a.gender] : "미입력"], ["나이", a.by ? ageText(a) : "미입력"], ["소속", a.team],
+    ["지점", [...(athleteBr[a.id] || [])].map(BN).join(", ")], ["결제 방식", PLAN[a.plan]], ["회당 단가", won(a.price)]];
+  if (a.archived) kv.push(["상태", "보관됨"]);
+  const d = document.createElement("div"); d.className = "infobox";
+  d.innerHTML = kv.map(([k, v]) => `<div class="kv2"><span>${k}</span><b>${esc(v)}</b></div>`).join("") + `<button type="button" class="tabadd" id="infoEdit">수정</button>`;
+  box.appendChild(d); $("infoEdit").onclick = () => openAthForm(a);
+}
+
+/* ---------- 측정 기록 · 순위 ---------- */
+let rankData = null, rankLoading = null;
+const DIVN = { elem: "초등부", mid: "중등부", high: "고등부", adult: "성인부" };
+const DIVA = { elem: "8~13살", mid: "14~16살", high: "17~19살", adult: "20살 이상" };
+const divOf = age => age == null ? null : age <= 13 ? "elem" : age <= 16 ? "mid" : age <= 19 ? "high" : "adult";
+const GN = { M: "남자", F: "여자" };
+function loadRank() {
+  if (rankData) return Promise.resolve(rankData);
+  return rankLoading ||= sb.rpc("speed_rankings").then(({ data, error }) => { rankLoading = null; if (error) throw error; rankData = data || { div: {}, age: {} }; return rankData; });
+}
+const kmh = v => `${Number(v).toFixed(1)} km/h`;
+function renderMs(a, box) {
+  const add = document.createElement("button"); add.type = "button"; add.className = "tabadd"; add.textContent = "+ 기록 추가";
+  add.onclick = () => openMs(a); 
+  const ms = ledgerMs || [];
+  if (!ms.length) { box.insertAdjacentHTML("beforeend", `<div class="empty">아직 측정 기록이 없어요.<br>무동력 트레드밀 최대 속도를 기록해보세요.</div>`); box.appendChild(add); return; }
+  const best = ms.reduce((m, x) => Number(x.speed) > Number(m.speed) ? x : m, ms[0]);
+  const card = document.createElement("div"); card.className = "mscard";
+  card.innerHTML = `<div class="hint">최고 기록</div><div class="big num">${Number(best.speed).toFixed(1)}<span style="font-size:15px;color:var(--muted)"> km/h</span></div>
+    <div class="hint">${md(best.measured_on)} 측정${best.age_at ? ` · ${best.age_at}살` : ""}</div><div class="mslines" id="msLines"><span class="hint">순위 확인 중…</span></div>`;
+  box.appendChild(card);
+  // 변화 그래프
+  if (ms.length >= 2) {
+    const pts = ms.slice().reverse(); const vals = pts.map(x => Number(x.speed));
+    const lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1), W = 320, H = 110, P = 26;
+    const X = i => P + (pts.length === 1 ? 0 : i * (W - P * 2) / (pts.length - 1)), Y = v => H - 20 - (v - lo) / (hi - lo || 1) * (H - 40);
+    const line = pts.map((x, i) => `${X(i).toFixed(1)},${Y(vals[i]).toFixed(1)}`).join(" ");
+    const g = document.createElement("div"); g.className = "mschart";
+    g.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="최대 속도 변화">
+      <line x1="${P}" x2="${W - P}" y1="${H - 20}" y2="${H - 20}" stroke="var(--line)"/>
+      <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
+      ${pts.map((x, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(vals[i]).toFixed(1)}" r="${i === pts.length - 1 ? 4.5 : 3}" fill="var(--accent)"/>`).join("")}
+      <text x="${X(0)}" y="${H - 4}" font-size="11" fill="var(--muted)" text-anchor="start">${md(pts[0].measured_on)}</text>
+      <text x="${X(pts.length - 1)}" y="${H - 4}" font-size="11" fill="var(--muted)" text-anchor="end">${md(pts[pts.length - 1].measured_on)}</text>
+      <text x="${X(pts.length - 1)}" y="${(Y(vals[vals.length - 1]) - 9).toFixed(1)}" font-size="12" font-weight="700" fill="var(--fg)" text-anchor="end">${vals[vals.length - 1].toFixed(1)}</text>
+    </svg>`;
+    box.appendChild(g);
+  }
+  box.appendChild(add);
+  const lg = document.createElement("div"); lg.className = "ledger";
+  ms.forEach((x, i) => {
+    const prev = ms[i + 1]; const diff = prev ? Number(x.speed) - Number(prev.speed) : 0;
+    const b = document.createElement("button"); b.type = "button"; b.className = "lr";
+    b.innerHTML = `<span class="d">${md(x.measured_on)}<small>${dow(x.measured_on)}</small></span><span class="c"><b>${kmh(x.speed)}${diff > 0 ? ` <span class="up">+${diff.toFixed(1)}</span>` : ""}</b><span>${x.age_at ? x.age_at + "살 · " : ""}${esc(TN(x.trainer_id))}${x.memo ? " · " + esc(x.memo) : ""}</span></span><span class="rn"></span>`;
+    b.onclick = () => openMs(a, x); lg.appendChild(b);
+  });
+  box.appendChild(lg);
+  // 순위 줄
+  loadRank().then(rd => {
+    const el = $("msLines"); if (!el || ledgerId !== a.id) return;
+    if (!a.gender) { el.innerHTML = `<span class="hint">성별을 입력하면 순위를 볼 수 있어요</span>`; return; }
+    const lines = [];
+    const cdiv = a.by ? divOf(THIS_YEAR() - a.by + 1) : null;
+    if (cdiv) {
+      const arr = rd.div[`${cdiv}|${a.gender}`] || []; const i = arr.findIndex(r => r.id === a.id);
+      if (i >= 0) lines.push(`<button type="button" class="msline" data-div="${cdiv}">${DIVN[cdiv]} ${GN[a.gender]} <b>${i + 1}위</b> <span>(${arr.length}명 중)</span></button>`);
+    }
+    const age = ms[0].age_at;
+    if (age) {
+      const mine = Math.max(...ms.filter(x => x.age_at === age).map(x => Number(x.speed)));
+      const arr = (rd.age[`${a.gender}|${age}`] || []).map(Number);
+      if (arr.length < 5) lines.push(`<span class="msline">${age}살 ${GN[a.gender]} · 비교 인원이 아직 적어요 (${arr.length}명)</span>`);
+      else { const rank = arr.filter(v => v > mine).length + 1; lines.push(`<span class="msline">${age}살 ${GN[a.gender]} 중 <b>상위 ${Math.max(1, Math.ceil(rank / arr.length * 100))}%</b> <span>(${arr.length}명 중 ${rank}위)</span></span>`); }
+    } else lines.push(`<span class="msline">나이를 입력하면 같은 나이와 비교할 수 있어요</span>`);
+    el.innerHTML = lines.join("");
+    el.querySelectorAll("button.msline").forEach(b => b.onclick = () => { rankG = a.gender; openRank(b.dataset.div); });
+  }).catch(() => { const el = $("msLines"); if (el) el.innerHTML = ""; });
+}
+/* 측정 기록 입력 */
+let msA = null, msRow = null;
+function openMs(a, m) {
+  msA = a; msRow = m || null; $("msErr").textContent = "";
+  $("msTitle").textContent = m ? "측정 기록 수정" : `${a.name} 측정 기록`;
+  $("msDate").value = m ? m.measured_on : todayIso(); $("msSpeed").value = m ? Number(m.speed).toFixed(1) : ""; $("msMemo").value = m ? m.memo : "";
+  $("msDel").hidden = !m; show($("msSheet"));
+}
+$("msForm").onsubmit = e => { e.preventDefault(); busy($("msForm").querySelector(".primary"), async () => {
+  const d = $("msDate").value, v = Number(String($("msSpeed").value).replace(",", "."));
+  if (!d) return $("msErr").textContent = "측정일을 입력해주세요.";
+  if (!(v >= 5 && v <= 45)) return $("msErr").textContent = "최대 속도 값을 다시 확인해주세요 (5~45 km/h).";
+  const row = { athlete_id: msA.id, measured_on: d, speed: Math.round(v * 10) / 10, memo: $("msMemo").value.trim() };
+  const { error } = msRow ? await sb.from("measurements").update(row).eq("id", msRow.id) : await sb.from("measurements").insert(row);
+  if (error) return $("msErr").textContent = friendly(error);
+  close(); toast("측정 기록을 저장했어요"); rankData = null; refresh();
+}); };
+$("msDel").onclick = () => confirmBtn($("msDel"), "정말 삭제", () => busy($("msDel"), async () => {
+  const { error } = await sb.from("measurements").delete().eq("id", msRow.id);
+  if (error) return $("msErr").textContent = friendly(error);
+  close(); toast("삭제했어요"); rankData = null; refresh();
+}));
+
+/* 순위 화면 */
+let rankOpen = false, rankDiv = null, rankG = "M";
+function openRank(div) {
+  if (layer() !== "rank" && layer() !== "rankdiv") history.pushState({ layer: "rank" }, "");
+  rankOpen = true; rankDiv = null;
+  if (div) { history.pushState({ layer: "rankdiv" }, ""); rankDiv = div; }
+  render(); window.scrollTo(0, 0);
+}
+async function renderRank() {
+  $("rkTitle").textContent = rankDiv ? `${DIVN[rankDiv]} 최대 속도 순위` : "최대 속도 순위";
+  $("rkSeg").hidden = !rankDiv;
+  $("rkM").setAttribute("aria-pressed", rankG === "M"); $("rkF").setAttribute("aria-pressed", rankG === "F");
+  const box = $("list"); $("summary").innerHTML = "";
+  if (!rankData) {
+    box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+    try { await loadRank(); } catch (e) { box.innerHTML = `<div class="empty">${esc(friendly(e))}</div>`; return; }
+    if (!rankOpen) return;
+  }
+  box.innerHTML = "";
+  if (!rankDiv) {
+    $("summary").innerHTML = `<span class="hint">전 지점 · 무동력 트레드밀 최대 속도 · 부문을 눌러 순위를 보세요</span>`;
+    const g = document.createElement("div"); g.className = "divgrid";
+    ["elem", "mid", "high", "adult"].forEach(d => {
+      const top = (rankData.div[`${d}|M`] || [])[0];
+      const b = document.createElement("button"); b.type = "button"; b.className = "divcard";
+      b.innerHTML = `<b>${DIVN[d]}</b><span class="hint">${DIVA[d]}</span><span class="dtop">${top ? `1위 ${Number(top.speed).toFixed(1)}` : "기록 없음"}</span>`;
+      b.onclick = () => { history.pushState({ layer: "rankdiv" }, ""); rankDiv = d; render(); window.scrollTo(0, 0); };
+      g.appendChild(b);
+    });
+    box.appendChild(g); return;
+  }
+  const arr = rankData.div[`${rankDiv}|${rankG}`] || [];
+  $("summary").innerHTML = `<span>${DIVN[rankDiv]} ${GN[rankG]} ${arr.length}명</span><span class="hint">${DIVA[rankDiv]} · 전 지점</span>`;
+  if (!arr.length) { box.innerHTML = `<div class="empty">아직 ${DIVN[rankDiv]} ${GN[rankG]} 기록이 없어요.</div>`; return; }
+  const lg = document.createElement("div"); lg.className = "ledger rank";
+  const MED = ["🥇", "🥈", "🥉"]; let prev = null, shown = 0;
+  arr.forEach((r, i) => {
+    const sp = Number(r.speed); const rk = prev === sp ? shown : i + 1; prev = sp; shown = rk;
+    const row = document.createElement(r.open ? "button" : "div"); row.className = "lr rkrow"; if (r.open) row.type = "button";
+    row.innerHTML = `<span class="rk">${rk <= 3 ? MED[rk - 1] : ""}<b>${rk}</b></span><span class="c"><b>${esc(r.name)}</b><span>${esc(r.team || "")}${r.branch ? " · " + esc(r.branch) : ""}</span></span><span class="rn num">${sp.toFixed(1)}</span>`;
+    if (r.open) row.onclick = () => { rankOpen = false; rankDiv = null; ledgerTab = "ms"; tab = "roll"; openLedger(r.id); };
+    lg.appendChild(row);
+  });
+  box.appendChild(lg);
+}
+$("rankBtn").onclick = () => { rankG = "M"; openRank(); };
+$("rkBack").onclick = () => history.back();
+$("rkM").onclick = () => { rankG = "M"; renderRank(); };
+$("rkF").onclick = () => { rankG = "F"; renderRank(); };
 
 /* ---------- 고정표 ---------- */
 let templates = [], tplOpen = false, tplWd = 1, tplMode = false, tplTrainer = null;
@@ -591,10 +754,12 @@ $("ldGo").onclick = () => busy($("ldGo"), async () => {
 
 function render() {
   $("tabS").setAttribute("aria-pressed", tab === "sched"); $("tabR").setAttribute("aria-pressed", tab === "roll");
+  $("hRank").hidden = !rankOpen;
   $("hWork").hidden = !workOpen; $("hTpl").hidden = !tplOpen || workOpen;
-  $("hSched").hidden = tab !== "sched" || workOpen || tplOpen; $("hList").hidden = !(tab === "roll" && !ledgerId) || workOpen || tplOpen; $("hLedger").hidden = !(tab === "roll" && ledgerId) || workOpen || tplOpen;
+  $("hSched").hidden = tab !== "sched" || workOpen || tplOpen; $("hList").hidden = !(tab === "roll" && !ledgerId) || workOpen || tplOpen || rankOpen; $("hLedger").hidden = !(tab === "roll" && ledgerId) || workOpen || tplOpen || rankOpen;
   $("fab").hidden = tab === "roll" && !!ledgerId; $("fab").textContent = tab === "sched" ? "+ 수업 추가" : "+ 선수 등록";
   $("mgrBtn").hidden = !isAdmin(); $("expBtn").hidden = !managedBranches().length;
+  if (rankOpen) { $("fab").hidden = true; renderRank(); return; }
   if (workOpen) { $("fab").hidden = true; renderWork(); return; }
   if (tplOpen) { $("fab").hidden = false; $("fab").textContent = "+ 고정 수업 추가"; renderTpl(); return; }
   if (tab === "sched") renderSched(); else if (ledgerId) renderLedger(); else renderList();
@@ -624,6 +789,8 @@ function leaveLedger() { if (layer() === "ledger") history.back(); else { ledger
 window.addEventListener("popstate", () => {
   if (ignorePop) { ignorePop = false; return; }
   if (openSheetEl) { hideSheet(); return; }
+  if (rankDiv && layer() !== "rankdiv") { rankDiv = null; if (layer() === "rank") { render(); return; } }
+  if (rankOpen && layer() !== "rank" && layer() !== "rankdiv") { rankOpen = false; rankDiv = null; render(); return; }
   if (workOpen && layer() !== "work") { workOpen = false; render(); return; }
   if (tplOpen && layer() !== "tpl") { tplOpen = false; render(); return; }
   if (ledgerId && layer() !== "ledger") { ledgerId = null; render(); }
@@ -1013,7 +1180,9 @@ $("trAdd").onclick = () => busy($("trAdd"), async () => {
 });
 
 /* ---------- 선수 등록·수정 ---------- */
-let aEditing = null, fPlan = "pass", aBr = new Set();
+let aEditing = null, fPlan = "pass", aBr = new Set(), aGender = null;
+function setGender(g) { aGender = g; press("#aGenders button", "x", g || ""); }
+document.querySelectorAll("#aGenders button").forEach(b => b.onclick = () => setGender(b.dataset.x));
 function drawAthBranches() {
   const box = $("aBranches"); box.innerHTML = "";
   const list = myBranches(); $("aBrBox").hidden = list.length < 2 && !(aEditing && (athleteBr[aEditing.id] || new Set()).size > 1);
@@ -1037,7 +1206,7 @@ function openAthForm(a) {
   $("aName").value = a ? a.name : ""; $("aTeam").value = a ? a.team : ""; $("aPrice").value = a ? a.price : "";
   $("aBirth").value = a && a.by ? ageOf(a.by) : ""; birthHint();
   aBr = new Set(a ? [...(athleteBr[a.id] || [])] : [curBranch]); drawAthBranches();
-  setPlan(a ? a.plan : "pass");
+  setPlan(a ? a.plan : "pass"); setGender(a ? a.gender : null);
   const mg = !!a && canManageAthlete(a);
   $("aManage").hidden = !mg;
   if (mg) {
@@ -1065,7 +1234,8 @@ $("aForm").onsubmit = e => { e.preventDefault(); busy($("aForm").querySelector("
   if ($("aPrice").value === "" || !(price >= 0)) return $("aErr").textContent = "회당 단가를 입력해주세요.";
   if (ageIn !== "" && !(Number(ageIn) >= 1 && Number(ageIn) <= 100)) return $("aErr").textContent = "나이는 1~100 사이 숫자로 입력해주세요.";
   if (!aBr.size) return $("aErr").textContent = "지점을 하나 이상 선택해주세요.";
-  const row = { name, team, plan: fPlan, price, birth_year: ageIn === "" ? null : byOf(Number(ageIn)) };
+  if (!aGender) return $("aErr").textContent = "성별을 선택해주세요.";
+  const row = { name, team, plan: fPlan, price, birth_year: ageIn === "" ? null : byOf(Number(ageIn)), gender: aGender };
   if (aEditing) {
     const { error } = await sb.from("athletes").update(row).eq("id", aEditing.id);
     if (error) return $("aErr").textContent = friendly(error);
@@ -1074,7 +1244,7 @@ $("aForm").onsubmit = e => { e.preventDefault(); busy($("aForm").querySelector("
     if (add.length) { const { error: e2 } = await sb.from("athlete_branches").insert(add.map(b => ({ athlete_id: aEditing.id, branch_id: b }))); if (e2) return $("aErr").textContent = friendly(e2); }
     if (del.length) { const { error: e3 } = await sb.from("athlete_branches").delete().eq("athlete_id", aEditing.id).in("branch_id", del); if (e3) return $("aErr").textContent = friendly(e3); }
   } else {
-    const { data: newId, error } = await sb.rpc("create_athlete", { p_name: name, p_team: team, p_plan: fPlan, p_price: price, p_birth_year: row.birth_year, p_branch_ids: [...aBr] });
+    const { data: newId, error } = await sb.rpc("create_athlete", { p_name: name, p_team: team, p_plan: fPlan, p_price: price, p_birth_year: row.birth_year, p_branch_ids: [...aBr], p_gender: aGender });
     if (error) return $("aErr").textContent = friendly(error);
     ledgerId = newId; ledgerLessons = [];
     close("ledger"); toast("저장했어요"); refresh(); return;
@@ -1090,8 +1260,8 @@ $("todayBtn").onclick = () => { cur = parse(todayIso()); render(); };
 document.querySelectorAll('input[type="date"], input[type="month"], input[type="time"]').forEach(inp => inp.addEventListener("click", () => { try { inp.showPicker(); } catch (e) {} }));
 $("datePick").onchange = e => { if (e.target.value) { cur = parse(e.target.value); render(); } };
 $("vTrainer").onclick = () => setView("trainer"); $("vTime").onclick = () => setView("time"); $("vMine").onclick = () => setView("mine");
-$("tabS").onclick = () => { if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
-$("tabR").onclick = () => { if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
+$("tabS").onclick = () => { rankOpen = false; rankDiv = null; if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "sched"; render(); };
+$("tabR").onclick = () => { rankOpen = false; rankDiv = null; if (tplOpen) leaveTpl(); if (workOpen) leaveWork(); if (ledgerId) leaveLedger(); tab = "roll"; render(); };
 $("backBtn").onclick = leaveLedger;
 $("aSearch").oninput = renderList;
 $("branchSel").onchange = e => { setBranch(Number(e.target.value)); if (ledgerId) leaveLedger(); render(); };
@@ -1269,6 +1439,10 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     add("결제", XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ 안내: "이 기간 결제가 없어요" }]), [11, 10, 10, 9, 6, 9, 14, 9, 12, 9, 24]);
     const ckRows = cks.map(c => ({ 날짜: c.work_date, 요일: dow(c.work_date), 지점: BN(c.branch_id), 트레이너: TN(c.trainer_id), 출근시간: hm(c.checked_at), 관리자수정: c.edited_by ? "예" : "" }));
     add("출근 기록", XLSX.utils.json_to_sheet(ckRows.length ? ckRows : [{ 안내: "이 기간 출근 기록이 없어요" }]), [11, 5, 10, 14, 9, 9]);
+    const msAll = await fetchAll("measurements", "*", q => q.gte("measured_on", from).lte("measured_on", to).order("measured_on"));
+    const poolIds = new Set(pool.map(a => a.id));
+    const msRows = msAll.filter(m => poolIds.has(m.athlete_id)).map(m => { const a = A(m.athlete_id) || {}; return { 측정일: m.measured_on, 선수: a.name || "", 성별: a.gender ? GEN[a.gender] : "", "측정 당시 나이": m.age_at || "", "최대 속도(km/h)": Number(m.speed), 소속: a.team || "", 측정트레이너: TN(m.trainer_id), 메모: m.memo }; });
+    add("측정 기록", XLSX.utils.json_to_sheet(msRows.length ? msRows : [{ 안내: "이 기간 측정 기록이 없어요" }]), [11, 10, 5, 12, 14, 16, 14, 20]);
     add("선수 목록", XLSX.utils.json_to_sheet(athRows.length ? athRows : [{ 안내: "선수가 없어요" }]), [10, 16, 6, 8, 16, 10, 10, 14]);
     const tag = one ? BN(expScope) : "전지점";
     XLSX.writeFile(wb, `솔리드_${tag}_${from}_${to}.xlsx`);
