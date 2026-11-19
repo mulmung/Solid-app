@@ -688,9 +688,12 @@ function renderMgr() {
       row.onclick = () => openMgrDetail({ kind: "branch", id: b.id }); lg.appendChild(row);
     });
     box.appendChild(lg);
-    const add = document.createElement("div"); add.className = "addrow2";
-    add.innerHTML = `<input id="mgBrNew" placeholder="새 지점 이름 (예: 강남점)" aria-label="새 지점 이름"><button type="button" id="mgBrAdd">+ 지점 추가</button>`;
-    box.appendChild(add);
+    const open = document.createElement("button"); open.type = "button"; open.className = "tabadd"; open.textContent = "+ 지점 추가";
+    const add = document.createElement("div"); add.className = "addrow2"; add.hidden = true;
+    add.innerHTML = `<input id="mgBrNew" placeholder="새 지점 이름 (예: 강남점)" aria-label="새 지점 이름"><button type="button" id="mgBrAdd">추가</button><button type="button" class="ghost" id="mgBrCancel">취소</button>`;
+    box.appendChild(open); box.appendChild(add);
+    open.onclick = () => { open.hidden = true; add.hidden = false; $("mgBrNew").focus(); };
+    $("mgBrCancel").onclick = () => { add.hidden = true; open.hidden = false; $("mgBrNew").value = ""; };
     $("mgBrAdd").onclick = () => busy($("mgBrAdd"), async () => {
       const name = $("mgBrNew").value.trim(); if (!name) return toast("지점 이름을 입력해주세요", true);
       const { error } = await sb.from("branches").insert({ name }); if (error) return toast(friendly(error), true);
@@ -794,11 +797,19 @@ function renderTrainerDetail(box, t) {
   // 계정 관리
   const acts = document.createElement("div"); acts.className = "infobox form";
   acts.innerHTML = `<div class="monthbar" style="padding:0">계정</div>
-    ${t.linked ? `<div class="pwbox"><input type="text" id="tdPw" autocomplete="off" aria-label="임시 비밀번호"><button type="button" id="tdPwGo">비밀번호 초기화</button></div>` : `<span class="hint">아직 가입 전이에요. 위 이메일로 '처음 가입'하면 연결돼요.</span>`}
+    ${!t.linked ? `<span class="hint">아직 가입 전이에요. 위 이메일로 '처음 가입'하면 연결돼요.</span>`
+      : self ? `<span class="hint">본인 비밀번호는 설정(⚙️) → 비밀번호 변경에서 바꿀 수 있어요.</span>`
+      : `<button type="button" class="secondary" id="tdPwOpen">비밀번호 초기화</button>
+         <div id="tdPwBox" hidden style="display:grid;gap:6px"><span class="hint">아래 임시 비밀번호로 바뀌어요. 버튼을 누르기 전에는 바뀌지 않아요.</span>
+         <div class="pwbox"><input type="text" id="tdPw" autocomplete="off" aria-label="임시 비밀번호"><button type="button" id="tdPwGo">이 값으로 바꾸기</button></div></div>`}
     ${self ? "" : `<div style="display:flex;gap:8px"><button type="button" class="secondary" id="tdAct">${t.active ? "퇴사 처리" : "복귀"}</button><button type="button" class="secondary danger" id="tdDel">삭제</button></div>`}`;
   box.appendChild(acts);
+  if ($("tdPwOpen")) $("tdPwOpen").onclick = () => {
+    const box = $("tdPwBox"); box.hidden = !box.hidden;
+    $("tdPwOpen").textContent = box.hidden ? "비밀번호 초기화" : "닫기";
+    if (!box.hidden && !$("tdPw").value) $("tdPw").value = "solid" + String(Math.floor(1000 + Math.random() * 9000));
+  };
   if ($("tdPw")) {
-    $("tdPw").value = "solid" + String(Math.floor(1000 + Math.random() * 9000));
     $("tdPwGo").onclick = () => confirmBtn($("tdPwGo"), "정말 초기화", () => busy($("tdPwGo"), async () => {
       const v = $("tdPw").value.trim(); if (v.length < 6) return toast("임시 비밀번호는 6자 이상으로 정해주세요", true);
       const { error } = await sb.rpc("admin_reset_password", { p_id: t.id, p_password: v });
