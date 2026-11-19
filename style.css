@@ -306,3 +306,6 @@ button.msline{background:var(--accent-soft);color:var(--accent);cursor:pointer}
 .rkrow .rk b{font-size:15px}
 .rkrow .rn{font-size:16px;color:var(--fg)}
 #hRank .seg{grid-template-columns:1fr 1fr}
+/* 시간 칸: 키보드 입력 가능, 시계 아이콘을 눌러야 선택 창 */
+input[type="time"]{cursor:text}
+input[type="time"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.7}
