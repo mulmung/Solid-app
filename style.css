@@ -332,3 +332,6 @@ input[type="time"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.7}
 .addrow2 input{width:0;flex:1 1 0}
 .addrow2 .ghost{background:var(--surface);color:var(--muted);border:1px solid var(--line)}
 .addrow2[hidden]{display:none}
+.ledger .grphead{padding:12px 14px 8px;font-size:15px;font-weight:800;color:var(--fg);background:var(--surface);border-top:1px solid var(--line)}
+.ledger .grphead:first-child{border-top:0}
+.ledger .tline{padding-left:24px}

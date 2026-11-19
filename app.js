@@ -706,23 +706,38 @@ function renderMgr() {
   f.innerHTML = `<option value="all">전체 지점</option>` + branches.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("");
   f.value = String(mgrFilter); f.onchange = () => { mgrFilter = f.value === "all" ? "all" : Number(f.value); renderMgr(); };
   box.appendChild(f);
-  const pass = t => mgrFilter === "all" || t.position === "ceo" || homeBranch(t) === mgrFilter;
-  const groups = [["ceo", "대표"], ["staff", "정직원"], ["instructor", "강사"]];
   const lg = document.createElement("div"); lg.className = "ledger";
-  const line = t => {
-    const hb = homeBranch(t); const tags = [t.position === "ceo" ? "전 지점" : hb ? BN(hb) : "지점 없음"];
+  const byName = (x, y) => x.name.localeCompare(y.name, "ko");
+  const line = (t, showBranch) => {
+    const hb = homeBranch(t); const tags = [];
+    if (t.position === "ceo") tags.push("전 지점"); else if (showBranch) tags.push(hb ? BN(hb) : "지점 없음");
     if (hb && isMgr(t, hb)) tags.push("지점 관리자"); if (t.role === "admin") tags.push("앱 관리자");
-    const b = document.createElement("button"); b.type = "button"; b.className = "lr" + (t.active ? "" : " muted");
-    b.innerHTML = `<span class="d" style="font-family:var(--sans)">${esc(t.name)}</span><span class="c"><b style="font-weight:500">${esc(tags.join(" · "))}</b><span>${t.linked ? "가입 완료" : "가입 전"}</span></span><span class="rn chev">›</span>`;
+    if (!t.linked) tags.push("가입 전");
+    const b = document.createElement("button"); b.type = "button"; b.className = "lr tline" + (t.active ? "" : " muted");
+    b.innerHTML = `<span class="d" style="font-family:var(--sans)">${esc(t.name)}</span><span class="c"><b style="font-weight:500">${esc(tags.join(" · "))}</b></span><span class="rn chev">›</span>`;
     b.onclick = () => openMgrDetail({ kind: "trainer", id: t.id }); return b;
   };
-  groups.forEach(([k, label]) => {
-    const list = trainers.filter(t => t.active && t.position === k && pass(t)).sort((x, y) => x.name.localeCompare(y.name, "ko"));
-    const mb = document.createElement("div"); mb.className = "monthbar"; mb.textContent = `${label} ${list.length}명`; lg.appendChild(mb);
-    list.forEach(t => lg.appendChild(line(t)));
+  const head = (text, cls) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; lg.appendChild(d); };
+  const none = () => { const d = document.createElement("div"); d.className = "lr muted tline"; d.innerHTML = `<span class="d"></span><span class="c"><span>없음</span></span><span class="rn"></span>`; lg.appendChild(d); };
+  // 대표
+  const ceos = trainers.filter(t => t.active && t.position === "ceo").sort(byName);
+  if (ceos.length) { head(`대표`, "grphead"); ceos.forEach(t => lg.appendChild(line(t))); }
+  // 지점별: 정직원(지점 관리자 먼저, 가나다) → 강사(가나다)
+  branches.filter(b => b.active && (mgrFilter === "all" || b.id === mgrFilter)).forEach(b => {
+    head(b.name, "grphead");
+    const inB = trainers.filter(t => t.active && t.position !== "ceo" && homeBranch(t) === b.id);
+    [["staff", "정직원"], ["instructor", "강사"]].forEach(([k, label]) => {
+      const list = inB.filter(t => t.position === k).sort((x, y) => (isMgr(y, b.id) - isMgr(x, b.id)) || byName(x, y));
+      head(`${label} ${list.length}명`, "monthbar");
+      if (!list.length) none(); else list.forEach(t => lg.appendChild(line(t)));
+    });
   });
-  const gone = trainers.filter(t => !t.active && pass(t));
-  if (gone.length) { const mb = document.createElement("div"); mb.className = "monthbar"; mb.textContent = `퇴사 ${gone.length}명`; lg.appendChild(mb); gone.forEach(t => lg.appendChild(line(t))); }
+  // 지점 없는 사람 (예외)
+  const lost = trainers.filter(t => t.active && t.position !== "ceo" && !homeBranch(t));
+  if (lost.length && mgrFilter === "all") { head("지점 미지정", "grphead"); lost.sort(byName).forEach(t => lg.appendChild(line(t, true))); }
+  // 퇴사
+  const gone = trainers.filter(t => !t.active && (mgrFilter === "all" || homeBranch(t) === mgrFilter)).sort(byName);
+  if (gone.length) { head(`퇴사 ${gone.length}명`, "grphead"); gone.forEach(t => lg.appendChild(line(t, true))); }
   box.appendChild(lg);
   const add = document.createElement("button"); add.type = "button"; add.className = "tabadd"; add.textContent = "+ 트레이너 추가";
   add.onclick = () => openMgrDetail({ kind: "new" }); box.appendChild(add);
