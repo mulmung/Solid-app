@@ -309,3 +309,20 @@ button.msline{background:var(--accent-soft);color:var(--accent);cursor:pointer}
 /* 시간 칸: 키보드 입력 가능, 시계 아이콘을 눌러야 선택 창 */
 input[type="time"]{cursor:text}
 input[type="time"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.7}
+
+/* 관리 화면 */
+.lgtabs.two2{grid-template-columns:1fr 1fr}
+.chev{color:var(--muted);font-size:20px;font-weight:400}
+.addrow2{display:flex;gap:8px}
+.addrow2 input{flex:1;min-width:0;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg)}
+.addrow2 button{border:0;background:var(--accent);color:var(--on-accent);border-radius:10px;padding:0 14px;font-weight:700;white-space:nowrap}
+.infobox.form{padding:14px;gap:14px}
+.infobox.form .primary{height:46px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:700}
+.infobox.form select,.infobox.form input:not([type=checkbox]){width:100%;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg)}
+.infobox.form input:disabled,.infobox.form select:disabled{color:var(--muted)}
+.tdmgr{display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px}
+.tdmgr input{width:20px;height:20px;accent-color:var(--accent)}
+.secondary{flex:1;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700}
+.secondary.danger{color:var(--danger)}
+.infobox.form .pwbox{margin:0}
+.infobox.form .pwbox input{height:40px}
