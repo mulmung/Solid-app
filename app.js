@@ -191,7 +191,7 @@ async function loadLedger(aid) {
 let lastRefresh = 0;
 async function refresh() {
   lastRefresh = Date.now();
-  dayCache = {};
+  dayCache = {}; if (salData) salData.stale = true;
   try {
     await loadBase();
     if (tab === "roll" && ledgerId) await loadLedger(ledgerId);
@@ -943,6 +943,9 @@ $("ldGo").onclick = () => busy($("ldGo"), async () => {
 
 function render() {
   $("tabS").setAttribute("aria-pressed", tab === "sched"); $("tabR").setAttribute("aria-pressed", tab === "roll");
+  $("hSal").hidden = !salOpen;
+  $("salBtn").hidden = !me || me.position === "ceo"; $("salAllBtn").hidden = !(isSuper() || managedBranches().length);
+  if (salOpen) { ["hMgr", "hRank", "hWork", "hTpl", "hSched", "hList", "hLedger"].forEach(id => $(id).hidden = true); $("fab").hidden = true; renderSal(); return; }
   $("hMgr").hidden = !mgrOpen;
   if (mgrOpen) { ["hRank", "hWork", "hTpl", "hSched", "hList", "hLedger"].forEach(id => $(id).hidden = true); $("fab").hidden = true; renderMgr(); return; }
   $("hRank").hidden = !rankOpen;
@@ -980,6 +983,11 @@ function leaveLedger() { if (layer() === "ledger") history.back(); else { ledger
 window.addEventListener("popstate", () => {
   if (ignorePop) { ignorePop = false; return; }
   if (openSheetEl) { hideSheet(); return; }
+  if (salOpen) {
+    if (layer() === "sald") return;
+    if (layer() === "sal") { if (salList && salWho) { salWho = null; render(); } return; }
+    salOpen = false; salWho = null; salData = null; render(); return;
+  }
   if (mgrDetail && layer() !== "mgrd") { mgrDetail = null; if (layer() === "mgr") { render(); return; } }
   if (mgrOpen && layer() !== "mgr" && layer() !== "mgrd") { mgrOpen = false; mgrDetail = null; render(); return; }
   if (rankDiv && layer() !== "rankdiv") { rankDiv = null; if (layer() === "rank") { render(); return; } }
@@ -1548,6 +1556,254 @@ $("verBtn").onclick = () => {
   }).join("");
   show($("verSheet"));
 };
+/* ---------- 급여 (내 급여 · 트레이너 급여) ---------- */
+let salOpen = false, salList = false, salWho = null, salMonth = null, salData = null, salTok = 0;
+const ym = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+const monthEnd = d => iso(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+const canEditPay = tid => !!me && (me.id === tid || isAdmin());
+const salViewable = () => trainers.filter(t => t.position !== "ceo" && (t.id === me.id || isSuper() || [...(trainerBr[t.id] || [])].some(b => isManagerOf(b))));
+function openSal(list) {
+  if (layer() !== "sal" && layer() !== "sald") history.pushState({ layer: "sal" }, "");
+  salOpen = true; salList = list; salWho = list ? null : me.id;
+  const n = new Date(); salMonth = salMonth || new Date(n.getFullYear(), n.getMonth(), 1);
+  render(); window.scrollTo(0, 0);
+}
+function openSalWho(tid) { history.pushState({ layer: "sald" }, ""); salWho = tid; render(); window.scrollTo(0, 0); }
+function salShift(n) { salMonth = new Date(salMonth.getFullYear(), salMonth.getMonth() + n, 1); salData = null; render(); }
+$("salBtn").onclick = () => openSal(false);
+$("salAllBtn").onclick = () => openSal(true);
+$("slBack").onclick = () => history.back();
+$("slPrev").onclick = () => salShift(-1); $("slNext").onclick = () => salShift(1);
+$("slPick").onchange = e => { const v = e.target.value; if (!v) return; const [y, m] = v.split("-").map(Number); salMonth = new Date(y, m - 1, 1); salData = null; render(); };
+
+// 그 달에 적용되는 설정: 적용 시작 월이 그 달 이전인 것 중 가장 최근
+const salSettingFor = (rows, tid, mStart) => rows.filter(r => r.trainer_id === tid && r.from_month <= mStart).sort((a, b) => b.from_month.localeCompare(a.from_month))[0] || null;
+function salCalc(t, st, lessons, regs) {
+  const inst = t.position === "instructor";
+  const pg = lessons.filter(l => l.type !== "team"), tm = lessons.filter(l => l.type === "team");
+  const heads = pg.reduce((s, l) => s + l.counted, 0);
+  const pgN = pg.filter(l => l.counted > 0).length;
+  const newR = regs.filter(r => r.kind === "new"), reR = regs.filter(r => r.kind === "re");
+  const sum = a => a.reduce((s, r) => s + r.amount, 0);
+  const lines = [];
+  if (!st) return { st, lines, gross: 0, ded: 0, net: 0, heads, pgN, teamN: tm.length, unchecked: lessons.reduce((s, l) => s + l.unchecked, 0), prev: lessons.reduce((s, l) => s + l.prev, 0) };
+  if (!inst) {
+    lines.push(["기본급", "", st.base]);
+    lines.push(["개인·그룹", `${heads}명 × ${won(st.per_head)}`, heads * st.per_head]);
+    lines.push(["단체", `${tm.length}회 × ${won(st.per_team)}`, tm.length * st.per_team]);
+  } else {
+    const n = pgN + tm.length;
+    lines.push(["수업", `${n}회 × ${won(st.per_lesson)}${tm.length ? ` (단체 ${tm.length}회 포함)` : ""}`, n * st.per_lesson]);
+  }
+  const nS = sum(newR), rS = sum(reR);
+  lines.push(["신규 등록", `${newR.length}건 · ${won(nS)} × ${Number(st.new_pct)}%`, Math.round(nS * st.new_pct / 100)]);
+  lines.push(["재등록", `${reR.length}건 · ${won(rS)} × ${Number(st.re_pct)}%`, Math.round(rS * st.re_pct / 100)]);
+  const gross = lines.reduce((s, l) => s + l[2], 0);
+  const dv = Number(st.ded_value);
+  const ded = st.ded_kind === "3.3" ? Math.floor(gross * 0.033 / 10) * 10 : st.ded_kind === "pct" ? Math.floor(gross * dv / 100 / 10) * 10 : st.ded_kind === "fixed" ? Math.round(dv) : 0;
+  const dedLabel = st.ded_kind === "3.3" ? "3.3%" : st.ded_kind === "pct" ? `${dv}%` : st.ded_kind === "fixed" ? "고정 금액" : "없음";
+  return { st, lines, gross, ded, dedLabel, net: gross - ded, heads, pgN, teamN: tm.length, unchecked: lessons.reduce((s, l) => s + l.unchecked, 0), prev: lessons.reduce((s, l) => s + l.prev, 0) };
+}
+async function salLoad() {
+  const from = iso(salMonth), to = monthEnd(salMonth), key = `${from}|${salList ? "all" : salWho}`;
+  if (salData && salData.key === key && !salData.stale) return salData;
+  const tok = ++salTok;
+  const who = salList ? null : salWho;
+  const [ls, st, rg] = await Promise.all([
+    sb.rpc("pay_lessons", { p_from: from, p_to: to, p_trainer: who }),
+    (() => { let q = sb.from("pay_settings").select("*").order("from_month"); if (who) q = q.eq("trainer_id", who); return q; })(),
+    (() => { let q = sb.from("pay_regs").select("*").gte("date", from).lte("date", to).order("date"); if (who) q = q.eq("trainer_id", who); return q; })(),
+  ]);
+  const err = ls.error || st.error || rg.error; if (err) throw err;
+  if (tok !== salTok) return null;
+  salData = { key, lessons: ls.data || [], settings: st.data || [], regs: rg.data || [] };
+  return salData;
+}
+async function renderSal() {
+  $("slMonth").textContent = `${salMonth.getFullYear()}년 ${salMonth.getMonth() + 1}월`;
+  const n = new Date(); $("slSub").textContent = ym(salMonth) === ym(n) ? "이번 달 · 예상" : "";
+  $("slPick").value = ym(salMonth);
+  const box = $("list"); $("summary").innerHTML = "";
+  const showList = salList && !salWho;
+  const t = salWho ? T(salWho) : null;
+  $("slTitle").textContent = showList ? "트레이너 급여" : t && t.id === me.id ? "내 급여" : `${t ? t.name : ""} 트레이너 급여`;
+  $("slSub2").textContent = t && !showList ? [POS[t.position], homeBranch(t) ? BN(homeBranch(t)) : ""].filter(Boolean).join(" · ") : "";
+  if (!salData || salData.key !== `${iso(salMonth)}|${salList ? "all" : salWho}`) box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+  let d; try { d = await salLoad(); } catch (e) { box.innerHTML = `<div class="empty">${esc(friendly(e))}</div>`; return; }
+  if (!d || !salOpen) return;
+  const mStart = iso(salMonth);
+  if (showList) return renderSalList(box, d, mStart);
+  renderSalOne(box, d, t, mStart);
+}
+function renderSalList(box, d, mStart) {
+  box.innerHTML = "";
+  const pool = salViewable().filter(t => t.active || d.lessons.some(l => l.trainer_id === t.id));
+  const lg = document.createElement("div"); lg.className = "ledger";
+  const rank = (t, b) => isMgr(t, b) ? 0 : t.position === "staff" ? 1 : 2;
+  const row = t => {
+    const c = salCalc(t, salSettingFor(d.settings, t.id, mStart), d.lessons.filter(l => l.trainer_id === t.id), d.regs.filter(r => r.trainer_id === t.id));
+    const hb = homeBranch(t);
+    const r = document.createElement("button"); r.type = "button"; r.className = "lr tline" + (t.active ? "" : " muted");
+    const tags = [POS[t.position], hb && isMgr(t, hb) ? "지점 관리자" : "", t.active ? "" : "퇴사"].filter(Boolean).join(" · ");
+    r.innerHTML = `<span class="d" style="font-family:var(--sans)">${esc(t.name)}</span><span class="c"><b>${c.st ? won(c.net) : "급여 설정 없음"}</b><span>${esc(tags)}${c.st ? ` · 세전 ${won(c.gross)}` : ""}${c.unchecked ? ` · 미체크 ${c.unchecked}명` : ""}</span></span><span class="rn chev">›</span>`;
+    r.onclick = () => openSalWho(t.id); lg.appendChild(r);
+  };
+  const head = txt => { const h = document.createElement("div"); h.className = "grphead"; h.textContent = txt; lg.appendChild(h); };
+  let total = 0, any = false;
+  branches.filter(b => b.active).forEach(b => {
+    const inB = pool.filter(t => homeBranch(t) === b.id).sort((x, y) => (!x.active - !y.active) || (rank(x, b.id) - rank(y, b.id)) || x.name.localeCompare(y.name, "ko"));
+    if (!inB.length) return; any = true; head(b.name); inB.forEach(row);
+  });
+  const lost = pool.filter(t => !homeBranch(t) || !B(homeBranch(t)) || !B(homeBranch(t)).active).sort((x, y) => x.name.localeCompare(y.name, "ko"));
+  if (lost.length) { any = true; head("지점 미지정"); lost.forEach(row); }
+  pool.forEach(t => { const c = salCalc(t, salSettingFor(d.settings, t.id, mStart), d.lessons.filter(l => l.trainer_id === t.id), d.regs.filter(r => r.trainer_id === t.id)); total += c.net; });
+  $("summary").innerHTML = `<span>${pool.length}명 · 실수령 예상 합계 ${won(total)}</span><span class="hint">${isAdmin() ? "이름을 눌러 내역을 보고 고칠 수 있어요" : "보기 전용이에요 · 이름을 눌러 내역을 볼 수 있어요"}</span>`;
+  if (!any) { box.innerHTML = `<div class="empty">볼 수 있는 트레이너가 없어요.</div>`; return; }
+  box.appendChild(lg);
+}
+function renderSalOne(box, d, t, mStart) {
+  box.innerHTML = "";
+  if (!t) { box.innerHTML = `<div class="empty">트레이너를 찾을 수 없어요.</div>`; return; }
+  const lessons = d.lessons.filter(l => l.trainer_id === t.id), regs = d.regs.filter(r => r.trainer_id === t.id);
+  const st = salSettingFor(d.settings, t.id, mStart);
+  const c = salCalc(t, st, lessons, regs), can = canEditPay(t.id), hb = homeBranch(t);
+  const top = document.createElement("div"); top.className = "salbig";
+  if (st) {
+    top.innerHTML = `<span class="k">실수령 예상</span><b>${won(c.net)}</b><span class="s">세전 ${won(c.gross)} · 공제 ${won(c.ded)} (${esc(c.dedLabel)})</span>`;
+  } else top.innerHTML = `<span class="k">급여 설정이 없어요</span><span class="s">${can ? "아래 <b>급여 설정</b>에서 기본급·단가·공제를 입력해주세요." : "본인 또는 앱 관리자가 급여 설정을 입력해야 계산돼요."}</span>`;
+  box.appendChild(top);
+  const notes = [];
+  if (c.unchecked) notes.push(`미체크 ${c.unchecked}명이 있어요 · 출석 체크를 하면 반영돼요`);
+  if (c.prev) notes.push(`이전 결제분 ${c.prev}명은 급여에서 제외했어요`);
+  if (notes.length) { const nb = document.createElement("div"); nb.className = "salnote"; nb.innerHTML = notes.map(esc).join("<br>"); box.appendChild(nb); }
+  if (st) {
+    const vb = document.createElement("div"); vb.className = "vatbox";
+    vb.innerHTML = c.lines.map(l => `<div class="kv"><span>${esc(l[0])}${l[1] ? ` <small>${esc(l[1])}</small>` : ""}</span><span>${won(l[2])}</span></div>`).join("")
+      + `<div class="kv"><span>세전 합계</span><span>${won(c.gross)}</span></div><div class="kv"><span>공제 <small>${esc(c.dedLabel)}</small></span><span>−${won(c.ded)}</span></div><div class="kv tot"><span>실수령 예상</span><span>${won(c.net)}</span></div>`;
+    box.appendChild(vb);
+    const fm = st.from_month.slice(0, 7).split("-");
+    const h = document.createElement("div"); h.className = "hint"; h.textContent = `${fm[0]}년 ${Number(fm[1])}월부터 적용된 설정으로 계산했어요.`; box.appendChild(h);
+  }
+  if (can) {
+    const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px";
+    bar.innerHTML = `<button type="button" class="secondary" id="slSet">급여 설정</button><button type="button" class="secondary" id="slReg">+ 등록 추가</button>`;
+    box.appendChild(bar);
+    $("slSet").onclick = () => openSalSet(t, st, mStart);
+    $("slReg").onclick = () => openSalReg(t, null, st);
+  }
+  // 등록 목록
+  const rl = document.createElement("div"); rl.className = "ledger";
+  rl.innerHTML = `<div class="monthbar">신규·재등록 ${regs.length}건</div>`;
+  if (!regs.length) rl.insertAdjacentHTML("beforeend", `<div class="lr muted"><span class="d"></span><span class="c"><b>이 달 등록이 없어요</b></span><span class="rn"></span></div>`);
+  regs.forEach(r => {
+    const el = document.createElement(can ? "button" : "div"); el.className = "lr"; if (can) el.type = "button";
+    const pct = st ? (r.kind === "new" ? st.new_pct : st.re_pct) : 0;
+    el.innerHTML = `<span class="d">${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8))}<small>${dow(r.date)}</small></span><span class="c"><b>${r.kind === "new" ? "신규 등록" : "재등록"}${r.athlete ? ` · ${esc(r.athlete)}` : ""}</b><span>${won(r.amount)}${st ? ` × ${Number(pct)}% = ${won(Math.round(r.amount * pct / 100))}` : ""}${r.memo ? ` · ${esc(r.memo)}` : ""}</span></span><span class="rn">${can ? `<span class="chev">›</span>` : ""}</span>`;
+    if (can) el.onclick = () => openSalReg(t, r, st);
+    rl.appendChild(el);
+  });
+  box.appendChild(rl);
+  // 수업 목록
+  const ll = document.createElement("div"); ll.className = "ledger";
+  const inst = t.position === "instructor";
+  ll.innerHTML = `<div class="monthbar">수업 ${lessons.length}개 · ${inst ? `반영 ${c.pgN + c.teamN}회` : `개인·그룹 ${c.heads}명 · 단체 ${c.teamN}회`}</div>`;
+  if (!lessons.length) ll.insertAdjacentHTML("beforeend", `<div class="lr muted"><span class="d"></span><span class="c"><b>이 달 수업이 없어요</b></span><span class="rn"></span></div>`);
+  lessons.forEach(l => {
+    const el = document.createElement("div");
+    const ok = l.type === "team" || l.counted > 0; el.className = "lr" + (ok ? "" : " muted");
+    const kind = LABEL[l.type] + (l.branch_id !== hb ? ` · ${BN(l.branch_id)}` : "");
+    let res;
+    if (l.type === "team") res = `${esc([l.team, l.grade].filter(Boolean).join(" "))} · 1회 반영`;
+    else {
+      const bits = [inst ? (l.counted ? "1회 반영" : "미반영") : `${l.counted}명 반영`];
+      if (l.same_free) bits.push(`당일취소(미차감) ${l.same_free}명`); if (l.prior) bits.push(`사전취소 ${l.prior}명`);
+      if (l.prev) bits.push(`이전 결제분 ${l.prev}명`); if (l.unchecked) bits.push(`미체크 ${l.unchecked}명`);
+      res = bits.join(" · ") + (l.names ? ` — ${esc(l.names)}` : "");
+    }
+    el.innerHTML = `<span class="d">${Number(l.date.slice(5, 7))}/${Number(l.date.slice(8))}<small>${dow(l.date)}</small></span><span class="c"><b>${String(l.start_time).slice(0, 5)} ${esc(kind)}</b><span>${res}</span></span><span class="rn"></span>`;
+    ll.appendChild(el);
+  });
+  box.appendChild(ll);
+}
+/* 급여 설정 창 */
+let ssT = null, ssRow = null, ssD = "none";
+function setSsDed(k) {
+  ssD = k; press("#ssDed button", "d", k);
+  const v = $("ssDedV"); v.hidden = k === "none" || k === "3.3";
+  v.placeholder = k === "pct" ? "공제 % (예: 9.4)" : "매달 공제 금액 (원)";
+}
+document.querySelectorAll("#ssDed button").forEach(b => b.onclick = () => { setSsDed(b.dataset.d); if (!$("ssDedV").hidden) $("ssDedV").focus(); });
+function ssFill() {
+  const m = $("ssFrom").value + "-01";
+  ssRow = salData ? salData.settings.find(r => r.trainer_id === ssT.id && r.from_month === m) || null : null;
+  $("ssDel").hidden = !ssRow;
+}
+function openSalSet(t, cur, mStart) {
+  ssT = t; const inst = t.position === "instructor";
+  $("ssSub").textContent = `${t.name} 트레이너 · ${POS[t.position]}`;
+  $("ssStaff").hidden = inst; $("ssInst").hidden = !inst;
+  $("ssFrom").value = mStart.slice(0, 7);
+  const c = cur || {};
+  $("ssBase").value = c.base ?? ""; $("ssHead").value = c.per_head ?? ""; $("ssTeam").value = c.per_team ?? ""; $("ssLesson").value = c.per_lesson ?? "";
+  $("ssNew").value = c.new_pct != null ? Number(c.new_pct) : ""; $("ssRe").value = c.re_pct != null ? Number(c.re_pct) : "";
+  setSsDed(c.ded_kind || "none"); $("ssDedV").value = c.ded_value != null && Number(c.ded_value) ? Number(c.ded_value) : "";
+  $("ssErr").textContent = ""; ssFill(); show($("salSetSheet"));
+}
+$("ssFrom").onchange = ssFill;
+$("ssForm").onsubmit = e => { e.preventDefault(); busy($("ssForm").querySelector(".primary"), async () => {
+  const fm = $("ssFrom").value; if (!fm) return $("ssErr").textContent = "적용 시작 월을 골라주세요.";
+  const num = id => { const v = $(id).value.trim(); return v === "" ? 0 : Number(v); };
+  const row = { trainer_id: ssT.id, from_month: fm + "-01", base: num("ssBase"), per_head: num("ssHead"), per_team: num("ssTeam"), per_lesson: num("ssLesson"),
+    new_pct: num("ssNew"), re_pct: num("ssRe"), ded_kind: ssD, ded_value: ssD === "pct" || ssD === "fixed" ? num("ssDedV") : 0, updated_by: me.id, updated_at: new Date().toISOString() };
+  if (Object.values(row).some(v => typeof v === "number" && (isNaN(v) || v < 0))) return $("ssErr").textContent = "숫자를 0 이상으로 입력해주세요.";
+  if (row.new_pct > 100 || row.re_pct > 100 || (ssD === "pct" && row.ded_value > 100)) return $("ssErr").textContent = "%는 100 이하로 입력해주세요.";
+  if (ssD === "pct" && !row.ded_value) return $("ssErr").textContent = "공제 %를 입력해주세요.";
+  if (ssD === "fixed" && !row.ded_value) return $("ssErr").textContent = "공제 금액을 입력해주세요.";
+  [["base", "per_head", "per_team", "per_lesson"]].flat().forEach(k => row[k] = Math.round(row[k]));
+  const { error } = await sb.from("pay_settings").upsert(row, { onConflict: "trainer_id,from_month" });
+  if (error) return $("ssErr").textContent = friendly(error);
+  close(); toast("급여 설정을 저장했어요"); salData = null; render();
+}); };
+$("ssDel").onclick = () => confirmBtn($("ssDel"), "정말 삭제", () => busy($("ssDel"), async () => {
+  if (!ssRow) return;
+  const { error } = await sb.from("pay_settings").delete().eq("id", ssRow.id);
+  if (error) return toast(friendly(error), true);
+  close(); toast("설정을 삭제했어요"); salData = null; render();
+}));
+/* 신규·재등록 창 */
+let srT = null, srRow = null, srK = "new", srSt = null;
+function setSrKind(k) { srK = k; press("#srKinds button", "k", k); srHint(); }
+function srHint() {
+  const a = Number($("srAmt").value) || 0, pct = srSt ? Number(srK === "new" ? srSt.new_pct : srSt.re_pct) : null;
+  $("srHint").textContent = pct == null ? "급여 설정에서 %를 정하면 인센티브가 계산돼요." : a ? `인센티브 ${won(Math.round(a * pct / 100))} (${pct}%)` : `설정한 ${srK === "new" ? "신규" : "재등록"} ${pct}%로 계산돼요.`;
+}
+document.querySelectorAll("#srKinds button").forEach(b => b.onclick = () => setSrKind(b.dataset.k));
+$("srAmt").oninput = srHint;
+function openSalReg(t, r, st) {
+  srT = t; srRow = r; srSt = st;
+  $("srTitle").textContent = r ? "등록 수정" : "등록 추가";
+  $("srAth").value = r ? r.athlete : ""; $("srAmt").value = r ? r.amount : ""; $("srMemo").value = r ? r.memo : "";
+  const today = todayIso(), ms = iso(salMonth), me2 = monthEnd(salMonth);
+  $("srDate").value = r ? r.date : today >= ms && today <= me2 ? today : ms;
+  $("srDel").hidden = !r; $("srErr").textContent = "";
+  setSrKind(r ? r.kind : "new"); show($("salRegSheet"));
+}
+$("srForm").onsubmit = e => { e.preventDefault(); busy($("srForm").querySelector(".primary"), async () => {
+  const amt = Number($("srAmt").value), date = $("srDate").value;
+  if (!$("srAmt").value || isNaN(amt) || amt < 0) return $("srErr").textContent = "결제 금액을 입력해주세요.";
+  if (!date) return $("srErr").textContent = "날짜를 골라주세요.";
+  const row = { trainer_id: srT.id, kind: srK, athlete: $("srAth").value.trim(), amount: Math.round(amt), date, memo: $("srMemo").value.trim() };
+  const { error } = srRow ? await sb.from("pay_regs").update(row).eq("id", srRow.id) : await sb.from("pay_regs").insert(row);
+  if (error) return $("srErr").textContent = friendly(error);
+  close(); toast(srRow ? "등록을 수정했어요" : "등록을 추가했어요"); salData = null;
+  const [y, m] = date.split("-").map(Number); if (y !== salMonth.getFullYear() || m !== salMonth.getMonth() + 1) toast(`${m}월 급여에 들어가요`);
+  render();
+}); };
+$("srDel").onclick = () => confirmBtn($("srDel"), "정말 삭제", () => busy($("srDel"), async () => {
+  const { error } = await sb.from("pay_regs").delete().eq("id", srRow.id);
+  if (error) return toast(friendly(error), true);
+  close(); toast("등록을 삭제했어요"); salData = null; render();
+}));
 /* 톱니바퀴 설정 메뉴 */
 function setGear(open) { $("gearMenu").hidden = !open; $("gearBtn").setAttribute("aria-expanded", open); }
 $("gearBtn").onclick = e => { e.stopPropagation(); setGear($("gearMenu").hidden); };

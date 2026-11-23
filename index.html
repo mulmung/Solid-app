@@ -53,6 +53,8 @@
           </button>
           <div class="gmenu" id="gearMenu" hidden>
             <div class="who"><b id="meLabel"></b><span id="meSub"></span></div>
+            <button type="button" id="salBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>내 급여</button>
+            <button type="button" id="salAllBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></svg>트레이너 급여</button>
             <button type="button" id="expBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>데이터 내보내기</button>
             <button type="button" id="pwBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>비밀번호 변경</button>
             <button type="button" id="verBtn" class="ver">버전 <span id="verNum"></span> · 업데이트 내역</button>
@@ -76,6 +78,10 @@
     <div id="hWork" hidden style="display:grid;gap:10px">
       <div class="back"><button id="wkBack" class="ib backib" aria-label="스케줄로 돌아가기" title="스케줄로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="wkTitle">출근 기록</b></div></div>
       <div class="datebar"><button class="navb" id="wkPrev" aria-label="이전 날">‹</button><div class="datelabel"><strong id="wkMonth"></strong><small id="wkSub"></small><input type="date" id="wkPick" aria-label="날짜 선택"></div><button class="navb" id="wkNext" aria-label="다음 날">›</button></div>
+    </div>
+    <div id="hSal" hidden style="display:grid;gap:10px">
+      <div class="back"><button id="slBack" class="ib backib" aria-label="돌아가기" title="돌아가기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="slTitle">내 급여</b><span id="slSub2"></span></div></div>
+      <div class="datebar"><button class="navb" id="slPrev" aria-label="이전 달">‹</button><div class="datelabel"><strong id="slMonth"></strong><small id="slSub"></small><input type="month" id="slPick" aria-label="월 선택"></div><button class="navb" id="slNext" aria-label="다음 달">›</button></div>
     </div>
     <div id="hTpl" hidden style="display:grid;gap:10px">
       <div class="back"><button id="tpBack" class="ib backib" aria-label="스케줄로 돌아가기" title="스케줄로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><div class="who"><b id="tpTitle">고정표</b></div></div>
@@ -301,6 +307,53 @@
 </div>
 
 <!-- 업데이트 내역 -->
+<!-- 급여 설정 -->
+<div class="sheet" id="salSetSheet" hidden role="dialog" aria-modal="true" aria-labelledby="ssTitle">
+  <form id="ssForm" novalidate>
+    <div><h3 id="ssTitle">급여 설정</h3><div class="meta" id="ssSub"></div></div>
+    <div class="field"><label for="ssFrom">적용 시작 월</label><input id="ssFrom" type="month"><span class="hint">이 달부터 적용돼요. 이전 달 급여는 이전 설정 그대로 계산돼요.</span></div>
+    <div id="ssStaff" style="display:grid;gap:16px">
+      <div class="field"><label for="ssBase">기본급 (원)</label><input id="ssBase" type="number" min="0" inputmode="numeric" placeholder="예: 2000000"></div>
+      <div class="two">
+        <div class="field"><label for="ssHead">개인·그룹 1명당 (원)</label><input id="ssHead" type="number" min="0" inputmode="numeric" placeholder="예: 20000"></div>
+        <div class="field"><label for="ssTeam">단체 1회당 (원)</label><input id="ssTeam" type="number" min="0" inputmode="numeric" placeholder="예: 50000"></div>
+      </div>
+    </div>
+    <div class="field" id="ssInst"><label for="ssLesson">수업 1회당 (원)</label><input id="ssLesson" type="number" min="0" inputmode="numeric" placeholder="예: 30000"><span class="hint">개인·그룹·단체 모두 같은 단가로 계산해요.</span></div>
+    <div class="two">
+      <div class="field"><label for="ssNew">신규 등록 (%)</label><input id="ssNew" type="number" min="0" max="100" step="0.1" inputmode="decimal" placeholder="예: 10"></div>
+      <div class="field"><label for="ssRe">재등록 (%)</label><input id="ssRe" type="number" min="0" max="100" step="0.1" inputmode="decimal" placeholder="예: 5"></div>
+    </div>
+    <div class="field"><span class="lbl">공제</span>
+      <div class="opts four" id="ssDed">
+        <button type="button" data-d="none">없음<small>세전 그대로</small></button>
+        <button type="button" data-d="3.3">3.3%<small>프리랜서</small></button>
+        <button type="button" data-d="pct">직접 %<small>예: 4대보험</small></button>
+        <button type="button" data-d="fixed">고정 금액<small>매달 같은 금액</small></button>
+      </div>
+      <input id="ssDedV" type="number" min="0" step="0.01" inputmode="decimal" aria-label="공제 값" hidden></div>
+    <p class="err" id="ssErr" role="alert"></p>
+    <div class="actions"><button type="button" class="del" id="ssDel" hidden>이 설정 삭제</button><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
+<!-- 신규·재등록 -->
+<div class="sheet" id="salRegSheet" hidden role="dialog" aria-modal="true" aria-labelledby="srTitle">
+  <form id="srForm" novalidate>
+    <h3 id="srTitle">등록 추가</h3>
+    <div class="field"><span class="lbl">구분</span>
+      <div class="opts" id="srKinds" style="grid-template-columns:1fr 1fr"><button type="button" data-k="new">신규 등록</button><button type="button" data-k="re">재등록</button></div></div>
+    <div class="two">
+      <div class="field"><label for="srAth">선수 이름 (메모용)</label><input id="srAth" placeholder="예: 김민준"></div>
+      <div class="field"><label for="srDate">날짜</label><input id="srDate" type="date"></div>
+    </div>
+    <div class="field"><label for="srAmt">결제 금액 (부가세 별도, 원)</label><input id="srAmt" type="number" min="0" inputmode="numeric" placeholder="예: 550000"><span class="hint" id="srHint"></span></div>
+    <div class="field"><label for="srMemo">메모</label><input id="srMemo" placeholder="예: 10회권"></div>
+    <p class="err" id="srErr" role="alert"></p>
+    <div class="actions"><button type="button" class="del" id="srDel" hidden>삭제</button><button type="button" data-close>취소</button><button type="submit" class="primary">저장</button></div>
+  </form>
+</div>
+
 <div class="sheet" id="verSheet" hidden role="dialog" aria-modal="true" aria-labelledby="verTitle">
   <div class="in">
     <div><h3 id="verTitle">업데이트 내역</h3><div class="hint">대규모는 앞자리, 새 기능은 가운데, 수정·다듬기는 뒷자리가 올라가요.</div></div>
