@@ -1598,18 +1598,37 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
       fetchAll("payments", "*", q => scope(q.gte("date", from).lte("date", to)).order("date")),
       fetchAll("checkins", "*", q => scope(q.gte("work_date", from).lte("work_date", to)).order("work_date")),
     ]);
-    const lessonRows = [];
+    // 트레이너 순서: 대표 → 은평본점·성북점·태릉점(지점 관리자 → 정직원 → 강사, 가나다) → 지점 미지정 → 퇴사
+    const brIdx = id => { const i = branches.findIndex(b => b.id === id); return i < 0 ? 999 : i; };
+    const tKey = tid => {
+      const t = trainers.find(x => x.id === tid);
+      if (!t) return [9, 0, 0, ""];
+      if (!t.active) return [8, 0, 0, t.name];
+      if (t.position === "ceo") return [0, 0, 0, t.name];
+      const hb = homeBranch(t);
+      if (!hb) return [7, 0, 0, t.name];
+      return [1, brIdx(hb), isMgr(t, hb) ? 0 : t.position === "staff" ? 1 : 2, t.name];
+    };
+    const tCmp = (a, b) => { const x = tKey(a), y = tKey(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return x[3].localeCompare(y[3], "ko"); };
+    const lsSorted = ls.slice().sort((a, b) => tCmp(a.trainer_id, b.trainer_id) || (a.trainer_id || 0) - (b.trainer_id || 0) || a.date.localeCompare(b.date) || String(a.start_time).localeCompare(String(b.start_time)));
+    const LH = ["트레이너", "날짜", "요일", "지점", "시작", "종료", "종류", "선수/학교", "상태", "차감", "메모"];
+    const lessonAoa = [LH];
     let cP = 0, cPv = 0, cS = 0, cSd = 0, cPr = 0, cU = 0;
-    ls.forEach(r => {
+    let curT, sub = null;
+    const flush = () => { if (!sub) return; lessonAoa.push([`${sub.name} 트레이너 · 수업 ${sub.n}개 · 출석 ${sub.p} · 당일취소 ${sub.s} · 사전취소 ${sub.pr}${sub.u ? ` · 미체크 ${sub.u}` : ""}`]); lessonAoa.push([]); };
+    lsSorted.forEach(r => {
       const l = mapLesson(r, r.lesson_athletes);
-      const base = { 날짜: l.date, 요일: dow(l.date), 지점: BN(l.branch), 시작: l.start, 종료: endOf(l), 종류: LABEL[l.type], 트레이너: TN(l.trainer) };
-      if (l.type === "team") { lessonRows.push({ ...base, "선수/학교": `${l.team} ${l.grade}`, 상태: "", 차감: "", 메모: "" }); return; }
+      if (sub === null || l.trainer !== curT) { flush(); curT = l.trainer; sub = { name: TN(l.trainer).replace(/ 트레이너$/, ""), n: 0, p: 0, s: 0, pr: 0, u: 0 }; }
+      sub.n++;
+      const base = [TN(l.trainer), l.date, dow(l.date), BN(l.branch), l.start, endOf(l), LABEL[l.type]];
+      if (l.type === "team") { lessonAoa.push([...base, `${l.team} ${l.grade}`, "", "", ""]); return; }
       l.ids.forEach(id => {
         const x = l.att[id];
-        if (!x) cU++; else if (x.s === "present") cP++; else if (x.s === "prev") cPv++; else if (x.s === "prior") cPr++; else { cS++; if (x.deduct) cSd++; }
-        lessonRows.push({ ...base, "선수/학교": (A(id) || {}).name || "(삭제된 선수)", 상태: x ? ST[x.s] : "미체크", 차감: charged(x) ? "차감" : "", 메모: x ? x.memo : "" });
+        if (!x) { cU++; sub.u++; } else if (x.s === "present" || x.s === "prev") { x.s === "present" ? cP++ : cPv++; sub.p++; } else if (x.s === "prior") { cPr++; sub.pr++; } else { cS++; sub.s++; if (x.deduct) cSd++; }
+        lessonAoa.push([...base, (A(id) || {}).name || "(삭제된 선수)", x ? ST[x.s] : "미체크", charged(x) ? "차감" : "", x ? x.memo : ""]);
       });
     });
+    flush();
     const KIND = { trial: "체험수업", pass: "회차권", month: "월 정산", visit: "1회 결제", carry: "이전 회차 이어서" };
     const byMethod = {};
     const payRows = ps.map(mapPay).map(p => {
@@ -1627,9 +1646,9 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     const wb = XLSX.utils.book_new();
     const add = (name, ws, widths) => { if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add("요약", XLSX.utils.aoa_to_sheet(sum), [22, 24]);
-    add("수업·출석", XLSX.utils.json_to_sheet(lessonRows.length ? lessonRows : [{ 안내: "이 기간 수업이 없어요" }]), [11, 5, 10, 7, 7, 6, 14, 18, 9, 6, 24]);
+    add("수업·출석", XLSX.utils.aoa_to_sheet(lessonAoa.length > 1 ? lessonAoa : [["안내"], ["이 기간 수업이 없어요"]]), [14, 11, 5, 10, 7, 7, 6, 18, 9, 6, 24]);
     add("결제", XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ 안내: "이 기간 결제가 없어요" }]), [11, 10, 10, 9, 6, 9, 14, 9, 12, 9, 24]);
-    const ckRows = cks.map(c => ({ 날짜: c.work_date, 요일: dow(c.work_date), 지점: BN(c.branch_id), 트레이너: TN(c.trainer_id), 출근시간: hm(c.checked_at), 관리자수정: c.edited_by ? "예" : "" }));
+    const ckRows = cks.slice().sort((a, b) => tCmp(a.trainer_id, b.trainer_id) || a.trainer_id - b.trainer_id || a.work_date.localeCompare(b.work_date)).map(c => ({ 날짜: c.work_date, 요일: dow(c.work_date), 지점: BN(c.branch_id), 트레이너: TN(c.trainer_id), 출근시간: hm(c.checked_at), 관리자수정: c.edited_by ? "예" : "" }));
     add("출근 기록", XLSX.utils.json_to_sheet(ckRows.length ? ckRows : [{ 안내: "이 기간 출근 기록이 없어요" }]), [11, 5, 10, 14, 9, 9]);
     const msAll = await fetchAll("measurements", "*", q => q.gte("measured_on", from).lte("measured_on", to).order("measured_on"));
     const poolIds = new Set(pool.map(a => a.id));
