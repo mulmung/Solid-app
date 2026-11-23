@@ -1647,6 +1647,57 @@ $("expForm").onsubmit = e => { e.preventDefault(); busy($("expGo"), async () => 
     const add = (name, ws, widths) => { if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add("요약", XLSX.utils.aoa_to_sheet(sum), [22, 24]);
     add("수업·출석", XLSX.utils.aoa_to_sheet(lessonAoa.length > 1 ? lessonAoa : [["안내"], ["이 기간 수업이 없어요"]]), [14, 11, 5, 10, 7, 7, 6, 18, 9, 6, 24]);
+    // 지점별 시트: 트레이너마다 칸 묶음을 옆으로 나란히
+    const SW = 6, BH = ["날짜", "시작", "종류", "선수/학교", "상태", "메모"];
+    const byT = new Map();
+    lsSorted.forEach(r => { const k = r.trainer_id || 0; if (!byT.has(k)) byT.set(k, []); byT.get(k).push(mapLesson(r, r.lesson_athletes)); });
+    const sheets = new Map(); // 시트 이름 → [{t, tid, visitor}]
+    const put = (name, e) => { if (!sheets.has(name)) sheets.set(name, []); sheets.get(name).push(e); };
+    const actBr = branches.filter(b => b.active && (!one || b.id === expScope));
+    sheets.set("대표", []); actBr.forEach(b => sheets.set(b.name, []));
+    const tids = new Set([...byT.keys()]);
+    trainers.filter(t => t.active && (t.position === "ceo" || !one || homeBranch(t) === expScope)).forEach(t => tids.add(t.id));
+    [...tids].sort((a, b) => tCmp(a, b) || a - b).forEach(tid => {
+      const t = trainers.find(x => x.id === tid);
+      if (t && t.position === "ceo") return put("대표", { t, tid });
+      const hb = t ? homeBranch(t) : null;
+      if (one) return put(BN(expScope), { t, tid, visitor: hb !== expScope });
+      put(hb && sheets.has(BN(hb)) ? BN(hb) : "지점 미지정", { t, tid });
+    });
+    const blockSheet = list => {
+      list = list.slice().sort((a, b) => (!!a.visitor - !!b.visitor) || (!!(a.t && !a.t.active) - !!(b.t && !b.t.active)));
+      const aoa = [], merges = [], cols = [];
+      const set = (r, c, v) => { (aoa[r] ||= [])[c] = v; };
+      list.forEach((e, i) => {
+        const c0 = i * (SW + 1), t = e.t, hb = t ? homeBranch(t) : null;
+        const ls2 = byT.get(e.tid) || [];
+        let n = 0, p = 0, sm = 0, pr = 0, u = 0, row = 3;
+        ls2.forEach(l => {
+          n++;
+          const kind = LABEL[l.type] + ((t && t.position === "ceo") || l.branch !== hb ? ` · ${BN(l.branch)}` : "");
+          const base = [l.date, l.start, kind];
+          const push = vals => { [...base, ...vals].forEach((v, k) => set(row, c0 + k, v)); row++; };
+          if (l.type === "team") return push([`${l.team} ${l.grade}`, "", ""]);
+          l.ids.forEach(id => {
+            const x = l.att[id];
+            if (!x) u++; else if (x.s === "present" || x.s === "prev") p++; else if (x.s === "prior") pr++; else sm++;
+            const st = !x ? "미체크" : x.s === "same" ? `당일취소(${charged(x) ? "차감" : "미차감"})` : ST[x.s];
+            push([(A(id) || {}).name || "(삭제된 선수)", st, x ? x.memo : ""]);
+          });
+        });
+        const tags = t ? [POS[t.position], hb && isMgr(t, hb) ? "지점 관리자" : "", e.visitor && hb ? `${BN(hb)} 소속` : "", t.active ? "" : "퇴사"].filter(Boolean).join(" · ") : "";
+        set(0, c0, `${t ? t.name + " 트레이너" : "트레이너 미지정"}${tags ? ` (${tags})` : ""}`);
+        set(1, c0, n ? `수업 ${n}개 · 출석 ${p} · 당일취소 ${sm} · 사전취소 ${pr}${u ? ` · 미체크 ${u}` : ""}` : "이 기간 수업 없음");
+        BH.forEach((h, k) => set(2, c0 + k, h));
+        merges.push({ s: { r: 0, c: c0 }, e: { r: 0, c: c0 + SW - 1 } }, { s: { r: 1, c: c0 }, e: { r: 1, c: c0 + SW - 1 } });
+        cols.push(11, 7, 12, 16, 14, 20, 3);
+      });
+      for (let r = 0; r < aoa.length; r++) aoa[r] ||= [];
+      const ws = XLSX.utils.aoa_to_sheet(aoa.length ? aoa : [["이 기간 수업이 없어요"]]);
+      ws["!merges"] = merges; ws["!cols"] = cols.map(w => ({ wch: w }));
+      return ws;
+    };
+    sheets.forEach((list, name) => { if (list.length) add(name, blockSheet(list)); });
     add("결제", XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ 안내: "이 기간 결제가 없어요" }]), [11, 10, 10, 9, 6, 9, 14, 9, 12, 9, 24]);
     const ckRows = cks.slice().sort((a, b) => tCmp(a.trainer_id, b.trainer_id) || a.trainer_id - b.trainer_id || a.work_date.localeCompare(b.work_date)).map(c => ({ 날짜: c.work_date, 요일: dow(c.work_date), 지점: BN(c.branch_id), 트레이너: TN(c.trainer_id), 출근시간: hm(c.checked_at), 관리자수정: c.edited_by ? "예" : "" }));
     add("출근 기록", XLSX.utils.json_to_sheet(ckRows.length ? ckRows : [{ 안내: "이 기간 출근 기록이 없어요" }]), [11, 5, 10, 14, 9, 9]);
