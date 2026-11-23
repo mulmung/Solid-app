@@ -1600,7 +1600,7 @@ function salCalc(t, st, lessons, regs) {
   lines.push(["재등록", `${reR.length}건 · ${won(rS)} × ${Number(st.re_pct)}%`, Math.round(rS * st.re_pct / 100)]);
   const gross = lines.reduce((s, l) => s + l[2], 0);
   const dv = Number(st.ded_value);
-  const ded = st.ded_kind === "3.3" ? Math.floor(gross * 0.033 / 10) * 10 : st.ded_kind === "pct" ? Math.floor(gross * dv / 100 / 10) * 10 : st.ded_kind === "fixed" ? Math.round(dv) : 0;
+  const ded = st.ded_kind === "3.3" ? Math.round(gross * 33 / 1000) : st.ded_kind === "pct" ? Math.round(gross * dv * 100 / 10000) : st.ded_kind === "fixed" ? Math.round(dv) : 0;
   const dedLabel = st.ded_kind === "3.3" ? "3.3%" : st.ded_kind === "pct" ? `${dv}%` : st.ded_kind === "fixed" ? "고정 금액" : "없음";
   return { st, lines, gross, ded, dedLabel, net: gross - ded, heads, pgN, teamN: tm.length, unchecked: lessons.reduce((s, l) => s + l.unchecked, 0), prev: lessons.reduce((s, l) => s + l.prev, 0) };
 }
